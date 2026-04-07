@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="80" fill="#0d0d1a"/>
+  <!-- Route line -->
+  <polyline points="80,400 180,180 290,270 420,80"
+    fill="none" stroke="#e53935" stroke-width="28"
+    stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Waypoints -->
+  <circle cx="180" cy="180" r="16" fill="#fff"/>
+  <circle cx="290" cy="270" r="16" fill="#fff"/>
+  <!-- End anchor triangle -->
+  <polygon points="420,60 400,100 440,100" fill="#e53935" stroke="#fff" stroke-width="6"/>
+  <!-- Start dot -->
+  <circle cx="80" cy="400" r="22" fill="#4CAF50" stroke="#fff" stroke-width="6"/>
+</svg>
