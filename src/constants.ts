@@ -73,6 +73,24 @@ export function getGradeColor(grade: FrenchGrade): string {
   return GRADE_COLORS[grade] ?? '#BDBDBD';
 }
 
+// ── Route label geometry ──────────────────────────────────────────────────────
+// Single source of truth for all label sizing — used by RouteLabel.tsx (SVG),
+// fileUtils.ts (canvas export), and RoutesLayer.tsx (collision resolution).
+// Change values here and every consumer stays in sync automatically.
+export function getRouteLabelLayout(mm: number, digits: number, grade: string) {
+  const rectW   = (digits > 2 ? digits * 1.8 + 4 : 5) * mm * 0.9;
+  const rectH   = 4.2 * mm * 0.9;
+  const yOff    = 1.5 * mm;
+  const rx      = 0.8 * mm;
+  const outline = 0.3 * mm;
+  const gradeW  = grade ? Math.max((grade.length + 2.5) * mm, 3 * mm) : 0;
+  const gradeH  = 3.5 * mm;
+  const gradeGap = 0.3 * mm;
+  const totalH  = yOff + rectH + (grade ? gradeGap + gradeH : 0);
+  const w       = Math.max(rectW, gradeW);
+  return { rectW, rectH, yOff, rx, outline, gradeW, gradeH, gradeGap, totalH, w };
+}
+
 // ── Screen rendering sizes ────────────────────────────────────────────────────
 // Fixed pixel values at 100% zoom, zoom-invariant (divide SVG units by zoomScale).
 // These are used for the live editor canvas — independent of image resolution.

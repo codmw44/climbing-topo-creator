@@ -8,7 +8,8 @@
 import React, { useCallback, useRef } from 'react';
 import { Route, Pitch, Position, PositionPx } from '../../types';
 import { useEditor } from '../../context/EditorContext';
-import { getGradeColor, SCREEN, getOverlaySizes } from '../../constants';
+import { getGradeColor, SCREEN, getOverlaySizes, getRouteLabelLayout } from '../../constants';
+import { resolveLabels, RouteLayoutInfo, Seg } from '../../utils/labelLayout';
 import { RouteLine } from './RouteLine';
 import { PitchStation } from './PitchStation';
 import { RouteLabel } from './RouteLabel';
@@ -20,66 +21,29 @@ const ROUTE_NUMBER_BG = '#1a1a2e';
 
 // ── Label collision resolution ────────────────────────────────────────────────
 
-type LabelPos = { x: number; y: number };
-
 function resolveRouteLabels(
   routes: Route[],
   toPixelFn: (p: Position) => PositionPx,
   mm: number,
   imageWidth: number,
-): Map<string, LabelPos> {
-  const yOff = 1.5 * mm;
-  const rectH = 4.2 * mm * 0.9; // matches RouteLabel reduced margins
-  const gradeH = 3.5 * mm;
-
-  const boxes = routes.map((route) => {
+  imageHeight: number,
+): Map<string, { x: number; y: number }> {
+  const infos: RouteLayoutInfo[] = routes.map((route) => {
     const fp = route.pitches[0];
     const pt = fp?.points[0];
-    if (!pt) return { routeId: route.id, x: 0, y: 0, w: 0, totalH: 0 };
+    if (!pt) return { routeId: route.id, startX: 0, startY: 0, w: 0, totalH: 0, valid: false, segments: [] };
     const { x, y } = toPixelFn(pt);
-    const digits = String(route.number).length;
-    const rectW = (digits > 2 ? digits * 1.8 + 5 : 6) * mm * 0.9;
-    const gradeW = route.grade ? Math.max((route.grade.length * 1.5 + 3.5) * mm, 5 * mm) : 0;
-    const w = Math.max(rectW, gradeW);
-    const totalH = yOff + rectH + (route.grade ? 0.3 * mm + gradeH : 0);
-    return { routeId: route.id, x, y, w, totalH };
-  });
-
-  const placed: typeof boxes = [];
-  const result = new Map<string, LabelPos>();
-
-  for (const box of boxes) {
-    if (!box.w) { result.set(box.routeId, { x: box.x, y: box.y }); continue; }
-    let x = box.x;
-    const y = box.y; // y stays fixed — labels push sideways, not down
-    for (let iter = 0; iter < 40; iter++) {
-      const top = y + yOff;
-      const bot = y + box.totalH;
-      const left = x - box.w / 2;
-      const right = x + box.w / 2;
-      let pushed = false;
-      for (const p of placed) {
-        if (!p.w) continue;
-        const pTop = p.y + yOff;
-        const pBot = p.y + p.totalH;
-        const pLeft = p.x - p.w / 2;
-        const pRight = p.x + p.w / 2;
-        if (left < pRight && right > pLeft && top < pBot && bot > pTop) {
-          // Push sideways based on relative position
-          x = x <= p.x ? p.x - p.w / 2 - box.w / 2 : p.x + p.w / 2 + box.w / 2;
-          pushed = true;
-          break;
-        }
+    const { w, totalH } = getRouteLabelLayout(mm, String(route.number).length, route.grade);
+    const segments: Seg[] = [];
+    for (const pitch of route.pitches) {
+      const pts = pitch.points.map(toPixelFn);
+      for (let i = 0; i + 1 < pts.length; i++) {
+        segments.push({ x1: pts[i].x, y1: pts[i].y, x2: pts[i + 1].x, y2: pts[i + 1].y });
       }
-      if (!pushed) break;
     }
-    // Clamp so label stays inside image width
-    x = Math.max(box.w / 2, Math.min(x, imageWidth - box.w / 2));
-    result.set(box.routeId, { x, y: box.y });
-    placed.push({ ...box, x });
-  }
-
-  return result;
+    return { routeId: route.id, startX: x, startY: y, w, totalH, valid: true, segments };
+  });
+  return resolveLabels(infos, mm, imageWidth, imageHeight);
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -145,7 +109,7 @@ export function RoutesLayer() {
     pointHandlePx: SCREEN.handlePx / zoomScale,  // constant pixel size on screen
   };
 
-  const labelPositions = resolveRouteLabels(routes, toPixel, sizes.pxPerMm, imageSize.width);
+  const labelPositions = resolveRouteLabels(routes, toPixel, sizes.pxPerMm, imageSize.width, imageSize.height);
 
   const routeOpacity = (route: Route) => {
     const isOtherSelected = !!selectedRouteId && route.id !== selectedRouteId;

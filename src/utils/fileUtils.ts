@@ -1,6 +1,7 @@
 import { ProjectState, Route, Size } from '../types';
 import { buildSegmentPaths } from './pathUtils';
-import { getGradeColor, getOverlaySizes } from '../constants';
+import { getGradeColor, getOverlaySizes, getRouteLabelLayout } from '../constants';
+import { resolveLabels, RouteLayoutInfo } from './labelLayout';
 import { writeTextToDir, writeBlobToDir } from './fsApi';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -67,57 +68,21 @@ function resolveExportLabels(
   imageSize: Size,
   mm: number,
 ): Map<string, { px: number; py: number }> {
-  const yOff = 1.5 * mm;
-  const rectH = 4.2 * mm * 0.9; // matches drawRouteLabel reduced margins
-  const gradeH = 3.5 * mm;
-
-  const boxes = routes.map((route) => {
+  const infos: RouteLayoutInfo[] = routes.map((route) => {
     const fp = route.pitches[0];
     const sp = fp?.points[0];
-    if (!sp) return { routeId: route.id, px: 0, py: 0, w: 0, totalH: 0 };
-    const px = (sp.x / 100) * imageSize.width;
-    const py = (sp.y / 100) * imageSize.height;
-    const digits = String(route.number).length;
-    const rectW = (digits > 2 ? digits * 1.8 + 5 : 6) * mm * 0.9;
-    const gradeW = route.grade ? Math.max((route.grade.length * 1.5 + 3.5) * mm, 5 * mm) : 0;
-    const w = Math.max(rectW, gradeW);
-    const totalH = yOff + rectH + (route.grade ? 0.3 * mm + gradeH : 0);
-    return { routeId: route.id, px, py, w, totalH };
+    if (!sp) return { routeId: route.id, startX: 0, startY: 0, w: 0, totalH: 0, valid: false, segments: [] };
+    const { w, totalH } = getRouteLabelLayout(mm, String(route.number).length, route.grade);
+    return {
+      routeId: route.id,
+      startX: (sp.x / 100) * imageSize.width,
+      startY: (sp.y / 100) * imageSize.height,
+      w, totalH, valid: true, segments: [],
+    };
   });
-
-  const placed: typeof boxes = [];
+  const positions = resolveLabels(infos, mm, imageSize.width, imageSize.height);
   const result = new Map<string, { px: number; py: number }>();
-
-  for (const box of boxes) {
-    if (!box.w) { result.set(box.routeId, { px: box.px, py: box.py }); continue; }
-    let px = box.px;
-    const py = box.py; // y stays fixed — labels push sideways
-    for (let iter = 0; iter < 40; iter++) {
-      const top = py + yOff;
-      const bot = py + box.totalH;
-      const left = px - box.w / 2;
-      const right = px + box.w / 2;
-      let pushed = false;
-      for (const p of placed) {
-        if (!p.w) continue;
-        const pTop = p.py + yOff;
-        const pBot = p.py + p.totalH;
-        const pLeft = p.px - p.w / 2;
-        const pRight = p.px + p.w / 2;
-        if (left < pRight && right > pLeft && top < pBot && bot > pTop) {
-          px = px <= p.px ? p.px - p.w / 2 - box.w / 2 : p.px + p.w / 2 + box.w / 2;
-          pushed = true;
-          break;
-        }
-      }
-      if (!pushed) break;
-    }
-    // Clamp so label stays inside image width
-    px = Math.max(box.w / 2, Math.min(px, imageSize.width - box.w / 2));
-    result.set(box.routeId, { px, py: box.py });
-    placed.push({ ...box, px });
-  }
-
+  for (const [id, pos] of positions) result.set(id, { px: pos.x, py: pos.y });
   return result;
 }
 
@@ -370,12 +335,8 @@ function drawRouteLabel(
   const mm = sizes.pxPerMm;
   const fs = sizes.labelFontPx;
   const gradeFontSize = sizes.gradeFontPx;
-  const digits = String(number).length;
-  const rectW = (digits > 2 ? digits * 1.8 + 5 : 6) * mm * 0.9;
-  const rectH = 4.2 * mm * 0.9;
-  const yOff = 1.5 * mm;
-  const rx = 0.8 * mm;
-  const outline = 0.3 * mm;
+  const { rectW, rectH, yOff, rx, outline, gradeW, gradeH, gradeGap } =
+    getRouteLabelLayout(mm, String(number).length, grade);
 
   ctx.save();
 
@@ -398,9 +359,7 @@ function drawRouteLabel(
 
   // Grade badge
   if (grade) {
-    const gradeW = Math.max((grade.length * 1.5 + 3.5) * mm, 5 * mm);
-    const gradeH = 3.5 * mm;
-    const gy = y + yOff + rectH + 0.3 * mm;
+    const gy = y + yOff + rectH + gradeGap;
 
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     roundRect(ctx, x - gradeW / 2 - outline / 2, gy - outline / 2, gradeW + outline, gradeH + outline, rx * 0.7);
