@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { EditorProvider, useEditor } from './context/EditorContext';
+import { ToastProvider } from './components/Toast';
 import { Toolbar } from './components/Toolbar';
 import { Sidebar } from './components/Sidebar';
 import { ImageCanvas } from './components/ImageCanvas';
@@ -55,8 +56,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <EditorProvider>
-      <AppInner />
-    </EditorProvider>
+    <ToastProvider>
+      <EditorProvider>
+        <AppInner />
+      </EditorProvider>
+    </ToastProvider>
   );
 }

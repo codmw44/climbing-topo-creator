@@ -26,6 +26,7 @@ export function Sidebar() {
 
   const dragIdx = useRef<number | null>(null);
   const [dragOver, setDragOver] = React.useState<number | null>(null);
+  const [showNames, setShowNames] = React.useState(true);
 
   const selectedRoute = routes.find((r) => r.id === selectedRouteId) ?? null;
   const selectedPitch = selectedRoute?.pitches.find((p) => p.id === selectedPitchId) ?? null;
@@ -35,6 +36,13 @@ export function Sidebar() {
       <div className="sidebar-header">
         <span className="sidebar-title">Routes</span>
         <span className="sidebar-count">{routes.length}</span>
+        <button
+          className={`sidebar-names-btn${showNames ? '' : ' sidebar-names-btn--hidden'}`}
+          onClick={() => setShowNames(v => !v)}
+          title={showNames ? 'Hide route names' : 'Show route names'}
+        >
+          {showNames ? '𝐓' : '𝐓̶'}
+        </button>
       </div>
 
       {/* Route list */}
@@ -50,6 +58,7 @@ export function Sidebar() {
             isHovered={route.id === hoveredRouteId}
             isDragOver={dragOver === idx}
             selectedPitchId={selectedPitchId}
+            showName={showNames}
             onSelect={(pitchId) => {
               setSelectedRoute(route.id, pitchId ?? null);
               setMode('draw');
@@ -88,6 +97,7 @@ type RouteRowProps = {
   isHovered: boolean;
   isDragOver: boolean;
   selectedPitchId: string | null;
+  showName: boolean;
   onSelect: (pitchId?: string) => void;
   onHover: (hov: boolean) => void;
   onDelete: () => void;
@@ -102,7 +112,7 @@ type RouteRowProps = {
 };
 
 function RouteRow({
-  route, isSelected, isHovered, isDragOver, selectedPitchId,
+  route, isSelected, isHovered, isDragOver, selectedPitchId, showName,
   onSelect, onHover, onDelete, onUpdate, onAddPitch, onRemovePitch, onUpdatePitch,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: RouteRowProps) {
@@ -128,14 +138,16 @@ function RouteRow({
         />
         <span className="route-number">#{route.number}</span>
 
-        {/* Route name (editable) */}
-        <input
-          className="route-name-input"
-          value={route.name}
-          onChange={(e) => onUpdate({ name: e.target.value })}
-          onClick={(e) => e.stopPropagation()}
-          placeholder="Route name"
-        />
+        {/* Route name (editable, hideable) */}
+        {showName && (
+          <input
+            className="route-name-input"
+            value={route.name}
+            onChange={(e) => onUpdate({ name: e.target.value })}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="Route name"
+          />
+        )}
 
         {/* Route grade selector */}
         <GradeSelect

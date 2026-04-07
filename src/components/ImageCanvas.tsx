@@ -19,7 +19,6 @@ export function ImageCanvas() {
     const scale = Math.min(
       containerSize.width / imageSize.width,
       containerSize.height / imageSize.height,
-      1,
     );
     setZoom({
       scale,

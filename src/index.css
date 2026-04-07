@@ -22,7 +22,7 @@
   --danger:    #e74c3c;
   --success:   #2ecc71;
 
-  --toolbar-h: 48px;
+  --toolbar-h: 106px;
   --sidebar-w: 280px;
 
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -53,15 +53,34 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 /* ── Toolbar ─────────────────────────────────────────────────────────────── */
 
 .toolbar {
+  position: relative;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
-  padding: 0 12px;
-  height: var(--toolbar-h);
+  padding: 6px 48px 6px 12px; /* right pad reserves space for help button */
   background: var(--bg-panel);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
-  overflow-x: auto;
+}
+
+/* Forced line-break elements — hidden on wider screens */
+.toolbar-row-break {
+  flex-basis: 100%;
+  height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* 2-line layout: rows 2+3 merge onto same line */
+@media (min-width: 900px) {
+  .toolbar-row-break--2 { display: none; }
+}
+
+/* 1-line layout: all groups on single line */
+@media (min-width: 1280px) {
+  .toolbar-row-break--1,
+  .toolbar-row-break--2 { display: none; }
 }
 
 .toolbar-group {
@@ -104,11 +123,75 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 .toolbar-btn--warn { background: #b45309; border-color: #b45309; color: #fff; }
 .toolbar-btn--warn:hover { background: #92400e; }
 
-.toolbar-hints {
-  margin-left: auto;
+.help-wrapper {
+  position: absolute;
+  top: 7px;
+  right: 12px;
+}
+
+.help-btn {
+  font-weight: 700;
+  font-size: 13px;
+  min-width: 28px;
+  justify-content: center;
+}
+
+.help-popup {
+  position: fixed;
+  z-index: 1000;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-hl);
+  border-radius: 8px;
+  padding: 12px 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+  min-width: 280px;
+}
+
+.help-popup-title {
   font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
   color: var(--text-dim);
+  margin-bottom: 10px;
+}
+
+.help-table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.help-table td {
+  padding: 2px 0;
+  font-size: 12px;
+  vertical-align: middle;
+}
+
+.help-section-row td {
+  padding-top: 10px;
+  padding-bottom: 3px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+
+.help-section-row:first-child td {
+  padding-top: 0;
+}
+
+.help-key {
+  color: var(--text-sec);
+  font-family: ui-monospace, 'SF Mono', monospace;
+  font-size: 11px;
   white-space: nowrap;
+  padding-right: 14px;
+  min-width: 140px;
+}
+
+.help-desc {
+  color: var(--text-prim);
 }
 
 .toolbar-scale-group {
@@ -221,6 +304,21 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
   padding: 1px 7px;
   color: var(--text-sec);
 }
+
+.sidebar-names-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-sec);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  transition: all 0.1s;
+  line-height: 1;
+}
+.sidebar-names-btn:hover { background: var(--bg-hover); border-color: var(--border); }
+.sidebar-names-btn--hidden { color: var(--text-dim); }
 
 .route-list {
   flex: 1;
@@ -425,6 +523,79 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 .grade-legend-label {
   font-size: 11px;
   color: var(--text-sec);
+}
+
+/* ── Portrait / vertical-device layout ──────────────────────────────────── */
+
+@media (orientation: portrait) {
+  .app-body {
+    flex-direction: column;
+  }
+
+  .sidebar {
+    width: 100%;
+    height: 42vh;
+    max-height: 300px;
+    min-height: 150px;
+    flex-shrink: 0;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .sidebar-header {
+    padding: 8px 12px;
+  }
+
+  .grade-legend {
+    display: none;
+  }
+
+  /* Compact toolbar buttons on narrow portrait screens */
+  @media (max-width: 600px) {
+    .toolbar-btn {
+      padding: 4px 7px;
+      font-size: 11px;
+    }
+  }
+}
+
+/* ── Toast notifications ─────────────────────────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 2000;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
+  animation: toast-in 0.18s ease forwards, toast-out 0.25s ease 2.2s forwards;
+  max-width: 280px;
+  line-height: 1.4;
+}
+
+.toast--success { background: rgba(22, 163, 74, 0.92); }
+.toast--error   { background: rgba(220, 38, 38, 0.92); }
+.toast--info    { background: rgba(108, 99, 255, 0.92); }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateX(0); }
+  to   { opacity: 0; transform: translateX(-10px); }
 }
 
 /* ── Point context menu ───────────────────────────────────────────────────── */

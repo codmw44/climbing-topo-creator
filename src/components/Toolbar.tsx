@@ -9,6 +9,25 @@ import {
   readFileFromDir,
   listFilesInDir,
 } from '../utils/fsApi';
+import { useToast } from './Toast';
+
+const HELP_CONTENT = [
+  { section: 'Modes' },
+  { key: 'V / Esc',       desc: 'Select mode' },
+  { key: 'D',             desc: 'Draw mode' },
+  { section: 'History' },
+  { key: 'Ctrl+Z',        desc: 'Undo' },
+  { key: 'Ctrl+Y / Ctrl+Shift+Z', desc: 'Redo' },
+  { key: 'Backspace / Del', desc: 'Remove last point' },
+  { section: 'Navigation' },
+  { key: 'Two-finger scroll', desc: 'Pan' },
+  { key: 'Pinch / Ctrl+scroll', desc: 'Zoom' },
+  { key: 'Space + drag',  desc: 'Pan' },
+  { key: 'Middle-click drag', desc: 'Pan' },
+  { section: 'Drawing' },
+  { key: 'Click canvas',  desc: 'Add waypoint' },
+  { key: 'Shift+click point', desc: 'Point options menu' },
+];
 
 export function Toolbar() {
   const {
@@ -23,13 +42,17 @@ export function Toolbar() {
     overlayScale, setOverlayScale,
   } = useEditor();
 
+  const { showToast } = useToast();
+
   const imageInputRef   = useRef<HTMLInputElement>(null);
   const projectInputRef = useRef<HTMLInputElement>(null);
+  const helpBtnRef      = useRef<HTMLButtonElement>(null);
 
   const [loadedImageName,  setLoadedImageName]  = useState<string | null>(null);
   const [pendingImageName, setPendingImageName] = useState<string | null>(null);
   const [folderHandle,     setFolderHandle]     = useState<FileSystemDirectoryHandle | null>(null);
-  const [saveStatus,       setSaveStatus]       = useState<string | null>(null);
+  const [showHelp,         setShowHelp]         = useState(false);
+  const [helpAnchor,       setHelpAnchor]       = useState({ top: 0, right: 0 });
 
   // Restore persisted folder handle on mount
   useEffect(() => {
@@ -40,6 +63,18 @@ export function Toolbar() {
       if (ok) setFolderHandle(h);
     });
   }, []);
+
+  // Close help popup on outside click
+  useEffect(() => {
+    if (!showHelp) return;
+    const handler = (e: MouseEvent) => {
+      if (helpBtnRef.current && !helpBtnRef.current.closest('.help-wrapper')?.contains(e.target as Node)) {
+        setShowHelp(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showHelp]);
 
   // ── image helpers ───────────────────────────────────────────────────────────
 
@@ -52,7 +87,6 @@ export function Toolbar() {
         setImage(dataUrl, file.name, { width: img.naturalWidth, height: img.naturalHeight });
         setLoadedImageName(file.name);
         setPendingImageName(null);
-        // Auto-load project with matching name from folder if available
         if (folderHandle) {
           const projectName = file.name.replace(/\.[^.]+$/, '') + '.json';
           const projectFile = await readFileFromDir(folderHandle, projectName);
@@ -78,11 +112,10 @@ export function Toolbar() {
     const json = JSON.parse(text);
     const savedImageName = loadProject(json, setImage, setRoutes, setOverlayScale);
     if (!savedImageName) return;
-    if (skipImageLoad) return; // image already loaded by caller
+    if (skipImageLoad) return;
 
     setLoadedImageName(null);
 
-    // If we have a folder, try to auto-load the image from it
     if (folderHandle) {
       const imageFile = await readFileFromDir(folderHandle, savedImageName);
       if (imageFile) {
@@ -90,7 +123,6 @@ export function Toolbar() {
         return;
       }
     }
-    // Fallback: prompt user to pick the image file
     setPendingImageName(savedImageName);
     setTimeout(() => imageInputRef.current?.click(), 50);
   }
@@ -101,7 +133,7 @@ export function Toolbar() {
     const reader = new FileReader();
     reader.onload = async (ev) => {
       try { await loadJsonText(ev.target?.result as string); }
-      catch { alert('Failed to load project file.'); }
+      catch { showToast('Failed to load project file.', 'error'); }
     };
     reader.readAsText(file);
     e.target.value = '';
@@ -110,14 +142,13 @@ export function Toolbar() {
   // ── folder actions ──────────────────────────────────────────────────────────
 
   const handlePickFolder = async () => {
-    if (!isFsApiSupported()) { alert('File System API not supported in this browser.'); return; }
+    if (!isFsApiSupported()) { showToast('File System API not supported in this browser.', 'error'); return; }
     try {
       // @ts-expect-error — showDirectoryPicker is draft but widely supported
       const handle: FileSystemDirectoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
       await persistDirHandle(handle);
       setFolderHandle(handle);
 
-      // Auto-load the first (or only) .json project found in the folder
       const jsons = await listFilesInDir(handle, '.json');
       if (jsons.length === 1) {
         const f = await (await handle.getFileHandle(jsons[0])).getFile();
@@ -133,7 +164,7 @@ export function Toolbar() {
         }
       }
     } catch (err: unknown) {
-      if (err instanceof Error && err.name !== 'AbortError') alert(`Could not open folder: ${err.message}`);
+      if (err instanceof Error && err.name !== 'AbortError') showToast(`Could not open folder: ${err.message}`, 'error');
     }
   };
 
@@ -141,28 +172,31 @@ export function Toolbar() {
 
   const handleSaveProject = async () => {
     await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, dirHandle: folderHandle });
-    if (folderHandle) flash('Saved ✓');
+    showToast(folderHandle ? `Saved to ${folderHandle.name}` : 'Project downloaded');
   };
 
   const handleExport = async () => {
-    if (!imageDataUrl) { alert('No image loaded.'); return; }
+    if (!imageDataUrl) { showToast('No image loaded.', 'error'); return; }
     await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, dirHandle: folderHandle });
-    if (folderHandle) flash('Exported ✓');
+    showToast(folderHandle ? `Exported to ${folderHandle.name}` : 'Image downloaded');
   };
 
-  function flash(msg: string) {
-    setSaveStatus(msg);
-    setTimeout(() => setSaveStatus(null), 2000);
-  }
+  const toggleHelp = () => {
+    if (!showHelp && helpBtnRef.current) {
+      const r = helpBtnRef.current.getBoundingClientRect();
+      setHelpAnchor({ top: r.bottom + 6, right: window.innerWidth - r.right });
+    }
+    setShowHelp(v => !v);
+  };
 
   const canAddPitch = !!selectedRouteId;
   const folderName  = folderHandle?.name ?? null;
 
   return (
     <div className="toolbar">
-      {/* File operations */}
+
+      {/* ── Group 1: File operations ── */}
       <div className="toolbar-group">
-        {/* Folder button — shown when FS API is available */}
         {isFsApiSupported() && (
           <button
             className={`toolbar-btn${folderName ? ' toolbar-btn--active' : ''}`}
@@ -172,8 +206,6 @@ export function Toolbar() {
             📁 {folderName ? folderName : 'Folder'}
           </button>
         )}
-
-        {/* Image button — always shown */}
         <button
           className={`toolbar-btn${pendingImageName ? ' toolbar-btn--warn' : ''}`}
           onClick={() => imageInputRef.current?.click()}
@@ -182,50 +214,30 @@ export function Toolbar() {
           🖼 {pendingImageName ? `Open: ${pendingImageName}` : (loadedImageName ?? 'Image')}
         </button>
         <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOpenImage} />
-
-        {/* Open project button — always shown */}
         <button className="toolbar-btn" onClick={() => projectInputRef.current?.click()} title="Open Project (.json)">
           📂 Open
         </button>
         <input ref={projectInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleOpenProject} />
-
         <button
           className="toolbar-btn"
           onClick={handleSaveProject}
           title={folderHandle ? `Save to ${folderName}` : 'Save Project (JSON)'}
         >
-          {saveStatus === 'Saved ✓' ? '✓ Saved' : '💾 Save'}
+          💾 Save
         </button>
-
         <button
           className="toolbar-btn toolbar-btn--accent"
           onClick={handleExport}
           title={folderHandle ? `Export to ${folderName}` : 'Export JPEG with routes overlay'}
         >
-          {saveStatus === 'Exported ✓' ? '✓ Exported' : '📤 Export'}
-        </button>
-
-        {/* Status flash for folder writes */}
-        {saveStatus && folderHandle && (
-          <span className="toolbar-save-status">{saveStatus}</span>
-        )}
-      </div>
-
-      <div className="toolbar-divider" />
-
-      {/* Undo / Redo */}
-      <div className="toolbar-group">
-        <button className="toolbar-btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
-          ↩ Undo
-        </button>
-        <button className="toolbar-btn" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)">
-          ↪ Redo
+          📤 Export
         </button>
       </div>
 
-      <div className="toolbar-divider" />
+      {/* Break between file ops and editing tools */}
+      <div className="toolbar-row-break toolbar-row-break--1" />
 
-      {/* Mode buttons */}
+      {/* ── Group 2: Mode + line type + add route/pitch ── */}
       <div className="toolbar-group">
         <button
           className={`toolbar-btn ${mode === 'select' ? 'toolbar-btn--active' : ''}`}
@@ -242,47 +254,51 @@ export function Toolbar() {
           ✏ Draw
         </button>
       </div>
-
-      {/* Line type */}
-      {mode === 'draw' && (
-        <>
-          <div className="toolbar-divider" />
-          <div className="toolbar-group">
-            <button
-              className={`toolbar-btn ${drawingLineType === 'solid' ? 'toolbar-btn--active' : ''}`}
-              onClick={() => setDrawingLineType('solid')}
-              title="Solid line"
-            >
-              — Solid
-            </button>
-            <button
-              className={`toolbar-btn ${drawingLineType === 'dotted' ? 'toolbar-btn--active' : ''}`}
-              onClick={() => setDrawingLineType('dotted')}
-              title="Dashed line (hidden section)"
-            >
-              - - Dashed
-            </button>
-          </div>
-        </>
-      )}
-
       <div className="toolbar-divider" />
-
-      {/* Route/pitch actions */}
+      <div className="toolbar-group">
+        <button
+          className={`toolbar-btn ${drawingLineType === 'solid' ? 'toolbar-btn--active' : ''}`}
+          onClick={() => setDrawingLineType('solid')}
+          title="Solid line"
+        >
+          — Solid
+        </button>
+        <button
+          className={`toolbar-btn ${drawingLineType === 'dotted' ? 'toolbar-btn--active' : ''}`}
+          onClick={() => setDrawingLineType('dotted')}
+          title="Dashed line (hidden section)"
+        >
+          - - Dashed
+        </button>
+      </div>
+      <div className="toolbar-divider" />
       <div className="toolbar-group">
         <button className="toolbar-btn toolbar-btn--primary" onClick={addRoute} title="Add new route">
           + Route
         </button>
-        {canAddPitch && (
-          <button className="toolbar-btn" onClick={() => addPitch(selectedRouteId!)} title="Add pitch to route">
-            + Pitch
-          </button>
-        )}
+        <button
+          className="toolbar-btn"
+          onClick={() => canAddPitch && addPitch(selectedRouteId!)}
+          disabled={!canAddPitch}
+          title="Add pitch to selected route"
+        >
+          + Pitch
+        </button>
       </div>
 
-      <div className="toolbar-divider" />
+      {/* Break between editing tools and history/scale */}
+      <div className="toolbar-row-break toolbar-row-break--2" />
 
-      {/* Overlay scale */}
+      {/* ── Group 3: Undo/Redo + Scale ── */}
+      <div className="toolbar-group">
+        <button className="toolbar-btn" onClick={undo} disabled={!canUndo} title="Undo (Ctrl+Z)">
+          ↩ Undo
+        </button>
+        <button className="toolbar-btn" onClick={redo} disabled={!canRedo} title="Redo (Ctrl+Y)">
+          ↪ Redo
+        </button>
+      </div>
+      <div className="toolbar-divider" />
       <div className="toolbar-group toolbar-scale-group" title="Overlay size (auto = A5-page assumption)">
         <span className="toolbar-label">Scale</span>
         <input
@@ -306,9 +322,43 @@ export function Toolbar() {
         </button>
       </div>
 
-      <div className="toolbar-hints">
-        Two-finger scroll = pan · Pinch = zoom · Space+drag = pan · Shift+click point = options
+      {/* Help button — absolutely pinned to top-right corner */}
+      <div className="help-wrapper">
+        <button
+          ref={helpBtnRef}
+          className={`toolbar-btn help-btn${showHelp ? ' toolbar-btn--active' : ''}`}
+          onClick={toggleHelp}
+          title="Keyboard shortcuts & help"
+        >
+          ?
+        </button>
       </div>
+
+      {/* Help popup */}
+      {showHelp && (
+        <div
+          className="help-popup"
+          style={{ top: helpAnchor.top, right: helpAnchor.right }}
+        >
+          <div className="help-popup-title">Keyboard Shortcuts</div>
+          <table className="help-table">
+            <tbody>
+              {HELP_CONTENT.map((item, i) =>
+                'section' in item ? (
+                  <tr key={i} className="help-section-row">
+                    <td colSpan={2}>{item.section}</td>
+                  </tr>
+                ) : (
+                  <tr key={i}>
+                    <td className="help-key">{item.key}</td>
+                    <td className="help-desc">{item.desc}</td>
+                  </tr>
+                )
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
