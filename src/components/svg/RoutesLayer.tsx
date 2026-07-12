@@ -8,7 +8,7 @@
 import React, { useCallback, useRef } from 'react';
 import { Route, Pitch, Position, PositionPx } from '../../types';
 import { useEditor } from '../../context/EditorContext';
-import { getGradeColor, SCREEN, getOverlaySizes, getRouteLabelLayout } from '../../constants';
+import { getDisplayNumber, getGradeColor, SCREEN, getOverlaySizes, getRouteLabelLayout } from '../../constants';
 import { resolveLabels, RouteLayoutInfo, Seg } from '../../utils/labelLayout';
 import { RouteLine } from './RouteLine';
 import { PitchStation } from './PitchStation';
@@ -33,7 +33,7 @@ function resolveRouteLabels(
     const pt = fp?.points[0];
     if (!pt) return { routeId: route.id, startX: 0, startY: 0, w: 0, totalH: 0, valid: false, segments: [] };
     const { x, y } = toPixelFn(pt);
-    const { w, totalH } = getRouteLabelLayout(mm, String(route.number).length, route.grade);
+    const { w, totalH } = getRouteLabelLayout(mm, String(getDisplayNumber(route)).length, route.grade);
     const segments: Seg[] = [];
     for (const pitch of route.pitches) {
       const pts = pitch.points.map(toPixelFn);
@@ -234,7 +234,7 @@ export function RoutesLayer() {
                   key="label"
                   x={lp.x} y={lp.y}
                   sizes={sizes}
-                  number={route.number}
+                  number={getDisplayNumber(route)}
                   grade={route.grade}
                   numberBg={ROUTE_NUMBER_BG}
                   gradeColor={getGradeColor(route.grade)}

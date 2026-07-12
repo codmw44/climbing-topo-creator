@@ -81,7 +81,8 @@ export type Pitch = {
 export type Route = {
   id: string;
   name: string;
-  number: number;
+  number: number; // auto-assigned position (1-based); recomputed on add/remove/reorder
+  numberOverride?: number; // manual override — wins over `number` for display/export
   grade: FrenchGrade; // Overall grade (usually hardest pitch)
   pitches: Pitch[];
 };

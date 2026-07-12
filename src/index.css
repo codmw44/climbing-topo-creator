@@ -123,6 +123,20 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 .toolbar-btn--warn { background: #b45309; border-color: #b45309; color: #fff; }
 .toolbar-btn--warn:hover { background: #92400e; }
 
+.toolbar-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-item);
+  color: var(--text-prim);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  max-width: 220px;
+}
+.toolbar-select:hover { background: var(--bg-hover); border-color: var(--border-hl); }
+.toolbar-select:disabled { opacity: 0.35; cursor: not-allowed; }
+
 .help-wrapper {
   position: absolute;
   top: 7px;
@@ -365,12 +379,40 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
   flex-shrink: 0;
 }
 
-.route-number {
+.route-number-prefix {
   font-weight: 700;
   font-size: 12px;
   color: var(--text-sec);
-  min-width: 24px;
   flex-shrink: 0;
+}
+
+.route-number-input {
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--text-sec);
+  width: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  cursor: text;
+  padding: 0;
+  /* hide native spinner arrows so the field reads as a compact number label */
+  -moz-appearance: textfield;
+}
+.route-number-input::-webkit-outer-spin-button,
+.route-number-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.route-number-input:hover, .route-number-input:focus {
+  background: var(--bg-item);
+  border-radius: 4px;
+  color: var(--text-prim);
+}
+.route-number-input--override {
+  color: var(--accent, #4a9eff);
 }
 
 .route-name-input {

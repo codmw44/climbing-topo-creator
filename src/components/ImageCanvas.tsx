@@ -157,8 +157,8 @@ export function ImageCanvas() {
     >
       {!imageDataUrl ? (
         <div className="canvas-placeholder">
-          <p>Open an image to start drawing routes</p>
-          <p className="canvas-placeholder-hint">Use the 🖼 Image button in the toolbar</p>
+          <p>Pick a work folder to start drawing routes</p>
+          <p className="canvas-placeholder-hint">Use the 📁 button in the toolbar, then choose an image from the dropdown</p>
         </div>
       ) : (
         <div

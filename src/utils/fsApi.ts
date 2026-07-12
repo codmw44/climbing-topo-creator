@@ -122,3 +122,53 @@ export async function listFilesInDir(
   }
   return names.sort();
 }
+
+// ── Recursive image discovery ─────────────────────────────────────────────────
+
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];
+const EXPORTED_SUFFIX = '_withroutes'; // matched case-insensitively against basename
+
+export type FoundImage = {
+  /** Path relative to the picked root folder, e.g. "Wonderwall/AladinLeft.jpg" */
+  relPath: string;
+  name: string;
+  dirHandle: FileSystemDirectoryHandle;
+  fileHandle: FileSystemFileHandle;
+};
+
+function isExportedImage(filename: string): boolean {
+  const base = filename.replace(/\.[^.]+$/, '');
+  return base.toLowerCase().endsWith(EXPORTED_SUFFIX);
+}
+
+/**
+ * Recursively walks every nested subfolder of `root` looking for image files,
+ * skipping any already-exported topo (basename ends with "_withRoutes").
+ */
+export async function scanImagesRecursively(
+  root: FileSystemDirectoryHandle,
+): Promise<FoundImage[]> {
+  const results: FoundImage[] = [];
+
+  async function walk(dir: FileSystemDirectoryHandle, relDir: string) {
+    // @ts-expect-error — AsyncIterable iteration not in TS DOM types yet
+    for await (const entry of dir.values()) {
+      if (entry.kind === 'directory') {
+        await walk(entry as FileSystemDirectoryHandle, relDir ? `${relDir}/${entry.name}` : entry.name);
+      } else if (entry.kind === 'file') {
+        const lower = entry.name.toLowerCase();
+        if (!IMAGE_EXTENSIONS.some((ext) => lower.endsWith(ext))) continue;
+        if (isExportedImage(entry.name)) continue;
+        results.push({
+          relPath: relDir ? `${relDir}/${entry.name}` : entry.name,
+          name: entry.name,
+          dirHandle: dir,
+          fileHandle: entry as FileSystemFileHandle,
+        });
+      }
+    }
+  }
+
+  await walk(root, '');
+  return results.sort((a, b) => a.relPath.localeCompare(b.relPath));
+}

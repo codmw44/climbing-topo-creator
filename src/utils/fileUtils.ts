@@ -1,6 +1,6 @@
 import { CropRect, ProjectState, Route, Size } from '../types';
 import { buildSegmentPaths } from './pathUtils';
-import { getGradeColor, getOverlaySizes, getRouteLabelLayout } from '../constants';
+import { getDisplayNumber, getGradeColor, getOverlaySizes, getRouteLabelLayout } from '../constants';
 import { resolveLabels, RouteLayoutInfo } from './labelLayout';
 import { writeTextToDir, writeBlobToDir } from './fsApi';
 
@@ -78,7 +78,7 @@ function resolveExportLabels(
     const fp = route.pitches[0];
     const sp = fp?.points[0];
     if (!sp) return { routeId: route.id, startX: 0, startY: 0, w: 0, totalH: 0, valid: false, segments: [] };
-    const { w, totalH } = getRouteLabelLayout(mm, String(route.number).length, route.grade);
+    const { w, totalH } = getRouteLabelLayout(mm, String(getDisplayNumber(route)).length, route.grade);
     return {
       routeId: route.id,
       startX: (sp.x / 100) * imageSize.width,
@@ -192,7 +192,7 @@ export async function exportImage({
 
     // Route number + grade label at resolved position (collision-avoided)
     const lp = labelPositions.get(route.id);
-    if (lp) drawRouteLabel(ctx, lp.px, lp.py, route.number, route.grade, getGradeColor(route.grade), sizes);
+    if (lp) drawRouteLabel(ctx, lp.px, lp.py, getDisplayNumber(route), route.grade, getGradeColor(route.grade), sizes);
   }
 
   const filename = (baseName(imagePath) || 'topo') + '_withRoutes.jpg';

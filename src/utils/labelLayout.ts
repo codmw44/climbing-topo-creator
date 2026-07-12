@@ -80,12 +80,24 @@ export function resolveLabels(
     return true;
   }
 
+  // Clamp a candidate label position so its box always stays fully inside
+  // the image, regardless of how close the route's anchor point is to an edge.
+  function clampToImage(cx: number, cy: number, w: number, totalH: number) {
+    return {
+      x: Math.max(w / 2, Math.min(cx, imageWidth - w / 2)),
+      y: Math.max(0, Math.min(cy, imageHeight - totalH)),
+    };
+  }
+
   function generateCandidates(startX: number, startY: number, w: number, totalH: number) {
     const maxDist = 30 * mm;
     const step = 1.5 * mm;
     const numAngles = 16;
     const seen = new Set<string>();
-    const cands: { x: number; y: number; dist: number }[] = [{ x: startX, y: startY, dist: 0 }];
+    const start = clampToImage(startX, startY, w, totalH);
+    const cands: { x: number; y: number; dist: number }[] = [
+      { x: start.x, y: start.y, dist: Math.hypot(start.x - startX, start.y - startY) },
+    ];
     for (let dist = step; dist <= maxDist; dist += step) {
       for (let ai = 0; ai < numAngles; ai++) {
         const rad = ((90 + ai * (360 / numAngles)) % 360) * (Math.PI / 180);
@@ -148,7 +160,8 @@ export function resolveLabels(
 
       const yStep = 1.5 * mm;
       let rowY = baseY;
-      for (let pass = 0; pass < 2 && rowY === baseY; pass++) {
+      let foundRow = false;
+      for (let pass = 0; pass < 2 && !foundRow; pass++) {
         for (let t = 0; t <= 30; t++) {
           const y = baseY + t * yStep;
           if (y + maxTotalH > imageHeight) break;
@@ -157,9 +170,13 @@ export function resolveLabels(
             (pass > 0 || !overlapsOtherPaths(xp[k], y, infos[i].w, infos[i].totalH, i)) &&
             !overlapsPlaced(xp[k], y, infos[i].w, infos[i].totalH, placed),
           );
-          if (clear) { rowY = y; break; }
+          if (clear) { rowY = y; foundRow = true; break; }
         }
       }
+      // No clear row found below the cluster (e.g. cluster sits at the very
+      // bottom of the image) — clamp so the row's box still fits fully
+      // inside the image instead of drifting past the edge.
+      if (!foundRow) rowY = Math.max(0, Math.min(baseY, imageHeight - maxTotalH));
 
       const xp = rowXPositions(cx);
       for (let k = 0; k < sorted.length; k++) {
@@ -172,7 +189,8 @@ export function resolveLabels(
       // ── Radial placement for isolated routes ───────────────────────────
       const { startX, startY, w, totalH } = info;
       const candidates = generateCandidates(startX, startY, w, totalH);
-      let bestX = startX, bestY = startY;
+      const fallback = clampToImage(startX, startY, w, totalH);
+      let bestX = fallback.x, bestY = fallback.y;
 
       const tryFind = (checkPath: boolean, checkProximity: boolean) =>
         candidates.some((c) => {

@@ -7,7 +7,8 @@ import {
   loadPersistedDirHandle,
   ensurePermission,
   readFileFromDir,
-  listFilesInDir,
+  scanImagesRecursively,
+  FoundImage,
 } from '../utils/fsApi';
 import { useToast } from './Toast';
 
@@ -46,15 +47,21 @@ export function Toolbar() {
 
   const { showToast } = useToast();
 
-  const imageInputRef   = useRef<HTMLInputElement>(null);
-  const projectInputRef = useRef<HTMLInputElement>(null);
-  const helpBtnRef      = useRef<HTMLButtonElement>(null);
+  const helpBtnRef = useRef<HTMLButtonElement>(null);
 
-  const [loadedImageName,  setLoadedImageName]  = useState<string | null>(null);
-  const [pendingImageName, setPendingImageName] = useState<string | null>(null);
-  const [folderHandle,     setFolderHandle]     = useState<FileSystemDirectoryHandle | null>(null);
-  const [showHelp,         setShowHelp]         = useState(false);
-  const [helpAnchor,       setHelpAnchor]       = useState({ top: 0, right: 0 });
+  // Root work folder the user picked, and every image found by recursively
+  // scanning it (nested subfolders included, already-exported topos excluded).
+  const [rootHandle,   setRootHandle]   = useState<FileSystemDirectoryHandle | null>(null);
+  const [foundImages,  setFoundImages]  = useState<FoundImage[]>([]);
+  const [selectedPath, setSelectedPath] = useState('');
+  const [scanning,     setScanning]     = useState(false);
+
+  // Directory handle of the currently *open* image (may be a nested subfolder
+  // of rootHandle) — this is where Save/Export write sibling files.
+  const [currentImageDir, setCurrentImageDir] = useState<FileSystemDirectoryHandle | null>(null);
+
+  const [showHelp,   setShowHelp]   = useState(false);
+  const [helpAnchor, setHelpAnchor] = useState({ top: 0, right: 0 });
 
   // Restore persisted folder handle on mount
   useEffect(() => {
@@ -62,8 +69,12 @@ export function Toolbar() {
     loadPersistedDirHandle().then(async (h) => {
       if (!h) return;
       const ok = await ensurePermission(h).catch(() => false);
-      if (ok) setFolderHandle(h);
+      if (ok) {
+        setRootHandle(h);
+        await rescan(h);
+      }
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Close help popup on outside click
@@ -84,41 +95,55 @@ export function Toolbar() {
   // (setImage() resets cropRect, so it's re-applied once the image is ready).
   const pendingCropRef = useRef<import('../types').CropRect | null>(null);
 
-  function loadImageFile(file: File) {
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target?.result as string;
-      const img = new Image();
-      img.onload = async () => {
-        setImage(dataUrl, file.name, { width: img.naturalWidth, height: img.naturalHeight });
-        if (pendingCropRef.current) {
-          setCropRect(pendingCropRef.current);
-          pendingCropRef.current = null;
-        }
-        setLoadedImageName(file.name);
-        setPendingImageName(null);
-        if (folderHandle) {
-          const projectName = file.name.replace(/\.[^.]+$/, '') + '.json';
-          const projectFile = await readFileFromDir(folderHandle, projectName);
-          if (projectFile) {
-            try { await loadJsonText(await projectFile.text(), true); } catch {}
-          }
-        }
-      };
-      img.src = dataUrl;
-    };
-    reader.readAsDataURL(file);
+  async function rescan(handle: FileSystemDirectoryHandle) {
+    setScanning(true);
+    try {
+      const images = await scanImagesRecursively(handle);
+      setFoundImages(images);
+      return images;
+    } finally {
+      setScanning(false);
+    }
   }
 
-  const handleOpenImage = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) loadImageFile(file);
-    e.target.value = '';
-  };
+  async function openFoundImage(found: FoundImage) {
+    const file = await found.fileHandle.getFile();
+    setCurrentImageDir(found.dirHandle);
+    await loadImageFile(file, found.dirHandle);
+  }
+
+  function loadImageFile(file: File, dirHandle: FileSystemDirectoryHandle | null): Promise<void> {
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const dataUrl = ev.target?.result as string;
+        const img = new Image();
+        img.onload = async () => {
+          setImage(dataUrl, file.name, { width: img.naturalWidth, height: img.naturalHeight });
+          if (pendingCropRef.current) {
+            setCropRect(pendingCropRef.current);
+            pendingCropRef.current = null;
+          }
+          if (dirHandle) {
+            const projectName = file.name.replace(/\.[^.]+$/, '') + '.json';
+            const projectFile = await readFileFromDir(dirHandle, projectName);
+            if (projectFile) {
+              try { await loadJsonText(await projectFile.text(), dirHandle, true); } catch {}
+            }
+          }
+          resolve();
+        };
+        img.src = dataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  }
 
   // ── project load ────────────────────────────────────────────────────────────
 
-  async function loadJsonText(text: string, skipImageLoad = false) {
+  // `dirHandle` is the specific subfolder the referenced image lives in
+  // (needed to resolve the saved imagePath if the image itself isn't open yet).
+  async function loadJsonText(text: string, dirHandle: FileSystemDirectoryHandle | null, skipImageLoad = false) {
     const json = JSON.parse(text);
     const savedImageName = loadProject(json, setImage, setRoutes, setOverlayScale);
     if (skipImageLoad) {
@@ -129,33 +154,18 @@ export function Toolbar() {
       // so stash it and re-apply once that image finishes loading.
       pendingCropRef.current = json.cropRect ?? null;
     }
-    if (!savedImageName) return;
-    if (skipImageLoad) return;
+    if (!savedImageName || skipImageLoad) return;
 
-    setLoadedImageName(null);
-
-    if (folderHandle) {
-      const imageFile = await readFileFromDir(folderHandle, savedImageName);
+    if (dirHandle) {
+      const imageFile = await readFileFromDir(dirHandle, savedImageName);
       if (imageFile) {
-        loadImageFile(imageFile);
+        setCurrentImageDir(dirHandle);
+        await loadImageFile(imageFile, dirHandle);
         return;
       }
     }
-    setPendingImageName(savedImageName);
-    setTimeout(() => imageInputRef.current?.click(), 50);
+    showToast(`Project references "${savedImageName}", which wasn't found alongside it.`, 'error');
   }
-
-  const handleOpenProject = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try { await loadJsonText(ev.target?.result as string); }
-      catch { showToast('Failed to load project file.', 'error'); }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
 
   // ── folder actions ──────────────────────────────────────────────────────────
 
@@ -165,38 +175,34 @@ export function Toolbar() {
       // @ts-expect-error — showDirectoryPicker is draft but widely supported
       const handle: FileSystemDirectoryHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
       await persistDirHandle(handle);
-      setFolderHandle(handle);
-
-      const jsons = await listFilesInDir(handle, '.json');
-      if (jsons.length === 1) {
-        const f = await (await handle.getFileHandle(jsons[0])).getFile();
-        await loadJsonText(await f.text());
-      } else if (jsons.length > 1) {
-        const choice = window.prompt(
-          `Multiple projects found:\n${jsons.map((n, i) => `${i + 1}. ${n}`).join('\n')}\n\nEnter number to open (or cancel to skip):`,
-        );
-        const idx = parseInt(choice ?? '', 10) - 1;
-        if (idx >= 0 && idx < jsons.length) {
-          const f = await (await handle.getFileHandle(jsons[idx])).getFile();
-          await loadJsonText(await f.text());
-        }
-      }
+      setRootHandle(handle);
+      setSelectedPath('');
+      const images = await rescan(handle);
+      if (images.length === 0) showToast('No images found in this folder (or its subfolders).', 'error');
     } catch (err: unknown) {
       if (err instanceof Error && err.name !== 'AbortError') showToast(`Could not open folder: ${err.message}`, 'error');
     }
   };
 
+  const handleSelectImage = async (relPath: string) => {
+    setSelectedPath(relPath);
+    if (!relPath) return;
+    const found = foundImages.find((f) => f.relPath === relPath);
+    if (found) await openFoundImage(found);
+  };
+
   // ── save / export ───────────────────────────────────────────────────────────
 
   const handleSaveProject = async () => {
-    await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, cropRect, dirHandle: folderHandle });
-    showToast(folderHandle ? `Saved to ${folderHandle.name}` : 'Project downloaded');
+    await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, cropRect, dirHandle: currentImageDir });
+    showToast(currentImageDir ? `Saved to ${currentImageDir.name}` : 'Project downloaded');
   };
 
   const handleExport = async () => {
     if (!imageDataUrl) { showToast('No image loaded.', 'error'); return; }
-    await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, cropRect, dirHandle: folderHandle });
-    showToast(folderHandle ? `Exported to ${folderHandle.name}` : 'Image downloaded');
+    await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, cropRect, dirHandle: currentImageDir });
+    showToast(currentImageDir ? `Exported to ${currentImageDir.name}` : 'Image downloaded');
+    if (rootHandle) await rescan(rootHandle); // drop the newly-exported "_withRoutes" file from the picker
   };
 
   const handleToggleCrop = () => {
@@ -214,45 +220,53 @@ export function Toolbar() {
   };
 
   const canAddPitch = !!selectedRouteId;
-  const folderName  = folderHandle?.name ?? null;
+  const folderName  = rootHandle?.name ?? null;
 
   return (
     <div className="toolbar">
 
       {/* ── Group 1: File operations ── */}
       <div className="toolbar-group">
-        {isFsApiSupported() && (
-          <button
-            className={`toolbar-btn${folderName ? ' toolbar-btn--active' : ''}`}
-            onClick={handlePickFolder}
-            title={folderName ? `Folder: ${folderName}\nClick to change` : 'Open project folder for direct file access'}
-          >
-            📁 {folderName ? folderName : 'Folder'}
-          </button>
+        {isFsApiSupported() ? (
+          <>
+            <button
+              className={`toolbar-btn${folderName ? ' toolbar-btn--active' : ''}`}
+              onClick={handlePickFolder}
+              title={folderName ? `Work folder: ${folderName}\nClick to change` : 'Pick a work folder to scan for images'}
+            >
+              📁 {folderName ? folderName : 'Pick work folder'}
+            </button>
+            <select
+              className="toolbar-select"
+              value={selectedPath}
+              onChange={(e) => handleSelectImage(e.target.value)}
+              disabled={!rootHandle || scanning || foundImages.length === 0}
+              title="Choose an image to open"
+            >
+              <option value="" disabled>
+                {scanning ? 'Scanning…' : foundImages.length === 0 ? 'No images found' : 'Select an image…'}
+              </option>
+              {foundImages.map((img) => (
+                <option key={img.relPath} value={img.relPath}>{img.relPath}</option>
+              ))}
+            </select>
+          </>
+        ) : (
+          <span className="toolbar-label">File System API not supported in this browser.</span>
         )}
-        <button
-          className={`toolbar-btn${pendingImageName ? ' toolbar-btn--warn' : ''}`}
-          onClick={() => imageInputRef.current?.click()}
-          title={pendingImageName ? `Open image: ${pendingImageName}` : 'Open Image'}
-        >
-          🖼 {pendingImageName ? `Open: ${pendingImageName}` : (loadedImageName ?? 'Image')}
-        </button>
-        <input ref={imageInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleOpenImage} />
-        <button className="toolbar-btn" onClick={() => projectInputRef.current?.click()} title="Open Project (.json)">
-          📂 Open
-        </button>
-        <input ref={projectInputRef} type="file" accept=".json" style={{ display: 'none' }} onChange={handleOpenProject} />
         <button
           className="toolbar-btn"
           onClick={handleSaveProject}
-          title={folderHandle ? `Save to ${folderName}` : 'Save Project (JSON)'}
+          disabled={!imageDataUrl}
+          title={currentImageDir ? `Save to ${currentImageDir.name}` : 'Save Project (JSON)'}
         >
           💾 Save
         </button>
         <button
           className="toolbar-btn toolbar-btn--accent"
           onClick={handleExport}
-          title={folderHandle ? `Export to ${folderName}` : 'Export JPEG with routes overlay'}
+          disabled={!imageDataUrl}
+          title={currentImageDir ? `Export to ${currentImageDir.name}` : 'Export JPEG with routes overlay'}
         >
           📤 Export
         </button>

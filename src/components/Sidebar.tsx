@@ -4,7 +4,7 @@
 import React, { useRef } from 'react';
 import { useEditor } from '../context/EditorContext';
 import { FrenchGrade, Route, Pitch } from '../types';
-import { FRENCH_GRADES, getGradeColor } from '../constants';
+import { FRENCH_GRADES, getDisplayNumber, getGradeColor } from '../constants';
 
 export function Sidebar() {
   const {
@@ -136,7 +136,30 @@ function RouteRow({
           className="route-swatch"
           style={{ background: color }}
         />
-        <span className="route-number">#{route.number}</span>
+        <span className="route-number-prefix">#</span>
+        <input
+          className={`route-number-input${route.numberOverride != null ? ' route-number-input--override' : ''}`}
+          type="number"
+          min={1}
+          value={getDisplayNumber(route)}
+          onChange={(e) => {
+            const raw = e.target.value;
+            if (raw === '') { onUpdate({ numberOverride: undefined }); return; }
+            const n = parseInt(raw, 10);
+            if (!Number.isNaN(n)) onUpdate({ numberOverride: n });
+          }}
+          onClick={(e) => e.stopPropagation()}
+          title="Route number shown on the topo (overrides auto position-based numbering; clear to reset)"
+        />
+        {route.numberOverride != null && (
+          <button
+            className="icon-btn"
+            onClick={(e) => { e.stopPropagation(); onUpdate({ numberOverride: undefined }); }}
+            title={`Reset to auto number (#${route.number})`}
+          >
+            ↺
+          </button>
+        )}
 
         {/* Route name (editable, hideable) */}
         {showName && (

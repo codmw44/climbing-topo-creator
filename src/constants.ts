@@ -1,4 +1,10 @@
-import { FrenchGrade } from './types';
+import { FrenchGrade, Route } from './types';
+
+// The number actually shown on the topo/label/sidebar — a manual override
+// (if set) always wins over the auto-assigned positional number.
+export function getDisplayNumber(route: Pick<Route, 'number' | 'numberOverride'>): number {
+  return route.numberOverride ?? route.number;
+}
 
 // French grade difficulty bands → route color
 // 5a–5c+: green, 6a–6b+: blue, 6c–7a+: orange, 7b–7c: red, 7c+: purple
