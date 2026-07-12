@@ -8,6 +8,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useEditor } from '../context/EditorContext';
 import { RoutesLayer } from './svg/RoutesLayer';
+import { CropOverlay } from './CropOverlay';
 
 export function ImageCanvas() {
   const { imageDataUrl, imageSize, zoom, setZoom, containerRef, mode } = useEditor();
@@ -182,6 +183,7 @@ export function ImageCanvas() {
             draggable={false}
           />
           <RoutesLayer />
+          <CropOverlay />
         </div>
       )}
       <div className="zoom-controls">

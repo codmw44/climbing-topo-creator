@@ -16,6 +16,7 @@ function KeyboardShortcuts() {
 
       if (e.key === 'v' || e.key === 'V' || e.key === 'Escape') setMode('select');
       if (e.key === 'd' || e.key === 'D') setMode('draw');
+      if (e.key === 'c' || e.key === 'C') setMode('crop');
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault(); if (canUndo) undo();

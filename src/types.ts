@@ -23,6 +23,14 @@ export type Size = {
   height: number;
 };
 
+// Crop rectangle, stored as percentage of full image size (0–100)
+export type CropRect = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
 // A waypoint on a pitch path
 export type PathPoint = Position & {
   isPitchStation?: boolean; // true = belay/rappel anchor station marker
@@ -84,13 +92,15 @@ export type ProjectState = {
   imagePath: string; // Original filename (user must re-open image on load)
   routes: Route[];
   overlayScale?: number;
+  cropRect?: CropRect;
 };
 
 // Editor interaction modes
 export type EditorMode =
   | 'select'       // Pointer mode: click to select routes/points
   | 'draw'         // Click on image to add points to current pitch
-  | 'move';        // Drag existing points
+  | 'move'         // Drag existing points
+  | 'crop';        // Adjust export crop rectangle
 
 export type ZoomState = {
   scale: number;

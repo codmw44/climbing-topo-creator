@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  CropRect,
   EditorMode,
   FrenchGrade,
   PathPoint,
@@ -68,6 +69,10 @@ export type EditorContextType = {
   overlayScale: number;
   setOverlayScale: (s: number) => void;
 
+  // Export crop rectangle (percentage of image, null = no crop / full image)
+  cropRect: CropRect | null;
+  setCropRect: (r: CropRect | null) => void;
+
   // Coordinate conversion
   toPixel: (pos: Position) => PositionPx;
   toPercent: (px: PositionPx, containerSize: Size) => Position;
@@ -127,6 +132,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
   const [drawingLineType, setDrawingLineType] = useState<'solid' | 'dotted'>('solid');
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
   const [overlayScale, setOverlayScale] = useState(1.0);
+  const [cropRect, setCropRect] = useState<CropRect | null>(null);
 
   const historyRef = useRef<Route[][]>([[]]);
   const historyIdxRef = useRef(0);
@@ -173,6 +179,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     setImageDataUrl(dataUrl);
     setImagePath(path);
     setImageSize(size);
+    setCropRect(null);
   }, []);
 
   const toPixel = useCallback(
@@ -454,6 +461,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     setDrawingLineType,
     overlayScale,
     setOverlayScale,
+    cropRect,
+    setCropRect,
     toPixel,
     toPercent,
     addRoute,

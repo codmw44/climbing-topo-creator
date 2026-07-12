@@ -15,6 +15,7 @@ const HELP_CONTENT = [
   { section: 'Modes' },
   { key: 'V / Esc',       desc: 'Select mode' },
   { key: 'D',             desc: 'Draw mode' },
+  { key: 'C',             desc: 'Crop mode' },
   { section: 'History' },
   { key: 'Ctrl+Z',        desc: 'Undo' },
   { key: 'Ctrl+Y / Ctrl+Shift+Z', desc: 'Redo' },
@@ -40,6 +41,7 @@ export function Toolbar() {
     imageDataUrl, imagePath, imageSize, routes,
     setImage, setRoutes,
     overlayScale, setOverlayScale,
+    cropRect, setCropRect,
   } = useEditor();
 
   const { showToast } = useToast();
@@ -78,6 +80,10 @@ export function Toolbar() {
 
   // ── image helpers ───────────────────────────────────────────────────────────
 
+  // Crop rect loaded from a project file before its image has finished loading
+  // (setImage() resets cropRect, so it's re-applied once the image is ready).
+  const pendingCropRef = useRef<import('../types').CropRect | null>(null);
+
   function loadImageFile(file: File) {
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -85,6 +91,10 @@ export function Toolbar() {
       const img = new Image();
       img.onload = async () => {
         setImage(dataUrl, file.name, { width: img.naturalWidth, height: img.naturalHeight });
+        if (pendingCropRef.current) {
+          setCropRect(pendingCropRef.current);
+          pendingCropRef.current = null;
+        }
         setLoadedImageName(file.name);
         setPendingImageName(null);
         if (folderHandle) {
@@ -111,6 +121,14 @@ export function Toolbar() {
   async function loadJsonText(text: string, skipImageLoad = false) {
     const json = JSON.parse(text);
     const savedImageName = loadProject(json, setImage, setRoutes, setOverlayScale);
+    if (skipImageLoad) {
+      // Image is already loaded (setImage already ran) — apply crop directly.
+      setCropRect(json.cropRect ?? null);
+    } else {
+      // setImage() (called from loadImageFile below) will reset cropRect,
+      // so stash it and re-apply once that image finishes loading.
+      pendingCropRef.current = json.cropRect ?? null;
+    }
     if (!savedImageName) return;
     if (skipImageLoad) return;
 
@@ -171,15 +189,21 @@ export function Toolbar() {
   // ── save / export ───────────────────────────────────────────────────────────
 
   const handleSaveProject = async () => {
-    await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, dirHandle: folderHandle });
+    await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, cropRect, dirHandle: folderHandle });
     showToast(folderHandle ? `Saved to ${folderHandle.name}` : 'Project downloaded');
   };
 
   const handleExport = async () => {
     if (!imageDataUrl) { showToast('No image loaded.', 'error'); return; }
-    await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, dirHandle: folderHandle });
+    await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, cropRect, dirHandle: folderHandle });
     showToast(folderHandle ? `Exported to ${folderHandle.name}` : 'Image downloaded');
   };
+
+  const handleToggleCrop = () => {
+    setMode(mode === 'crop' ? 'select' : 'crop');
+  };
+
+  const handleClearCrop = () => setCropRect(null);
 
   const toggleHelp = () => {
     if (!showHelp && helpBtnRef.current) {
@@ -253,6 +277,23 @@ export function Toolbar() {
         >
           ✏ Draw
         </button>
+        <button
+          className={`toolbar-btn ${mode === 'crop' ? 'toolbar-btn--active' : ''}`}
+          onClick={handleToggleCrop}
+          disabled={!imageDataUrl}
+          title="Adjust export crop area"
+        >
+          ⛶ Crop
+        </button>
+        {cropRect && (
+          <button
+            className="toolbar-btn"
+            onClick={handleClearCrop}
+            title="Clear crop (export full image)"
+          >
+            ✕ Clear crop
+          </button>
+        )}
       </div>
       <div className="toolbar-divider" />
       <div className="toolbar-group">

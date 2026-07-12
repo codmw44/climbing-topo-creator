@@ -1,4 +1,4 @@
-import { ProjectState, Route, Size } from '../types';
+import { CropRect, ProjectState, Route, Size } from '../types';
 import { buildSegmentPaths } from './pathUtils';
 import { getGradeColor, getOverlaySizes, getRouteLabelLayout } from '../constants';
 import { resolveLabels, RouteLayoutInfo } from './labelLayout';
@@ -19,6 +19,7 @@ export async function saveProject({
   imagePath,
   routes,
   overlayScale,
+  cropRect,
   dirHandle,
 }: {
   imagePath: string;
@@ -26,10 +27,15 @@ export async function saveProject({
   imageSize: Size;             // ignored
   routes: Route[];
   overlayScale: number;
+  cropRect?: CropRect | null;
   dirHandle?: FileSystemDirectoryHandle | null;
 }): Promise<void> {
   const filename = (baseName(imagePath) || 'beta-creator-project') + '.json';
-  const text = JSON.stringify({ version: 1, imagePath, routes, overlayScale } as ProjectState, null, 2);
+  const text = JSON.stringify(
+    { version: 1, imagePath, routes, overlayScale, cropRect: cropRect ?? undefined } as ProjectState,
+    null,
+    2,
+  );
 
   if (dirHandle) {
     await writeTextToDir(dirHandle, filename, text);
@@ -94,6 +100,7 @@ export async function exportImage({
   routes,
   overlayScale,
   imagePath,
+  cropRect,
   dirHandle,
 }: {
   imageDataUrl: string;
@@ -101,6 +108,7 @@ export async function exportImage({
   routes: Route[];
   overlayScale: number;
   imagePath: string;
+  cropRect?: CropRect | null;
   dirHandle?: FileSystemDirectoryHandle | null;
 }) {
   const canvas = document.createElement('canvas');
@@ -189,8 +197,10 @@ export async function exportImage({
 
   const filename = (baseName(imagePath) || 'topo') + '_withRoutes.jpg';
 
+  const outputCanvas = cropRect ? cropCanvas(canvas, cropRect) : canvas;
+
   // Export as JPEG with medium compression (85% quality)
-  canvas.toBlob(async (blob) => {
+  outputCanvas.toBlob(async (blob) => {
     if (!blob) return;
     if (dirHandle) {
       await writeBlobToDir(dirHandle, filename, blob);
@@ -206,6 +216,21 @@ export async function exportImage({
 }
 
 // ── Canvas helpers ────────────────────────────────────────────────────────────
+
+/** Blit the cropRect (percentage of source canvas) into a new, smaller canvas. */
+function cropCanvas(source: HTMLCanvasElement, rect: CropRect): HTMLCanvasElement {
+  const sx = (rect.x / 100) * source.width;
+  const sy = (rect.y / 100) * source.height;
+  const sw = (rect.width / 100) * source.width;
+  const sh = (rect.height / 100) * source.height;
+
+  const out = document.createElement('canvas');
+  out.width = Math.max(1, Math.round(sw));
+  out.height = Math.max(1, Math.round(sh));
+  const ctx = out.getContext('2d')!;
+  ctx.drawImage(source, sx, sy, sw, sh, 0, 0, out.width, out.height);
+  return out;
+}
 
 function loadImg(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
