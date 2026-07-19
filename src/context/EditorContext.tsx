@@ -18,6 +18,7 @@ import {
   Size,
   ZoomState,
 } from '../types';
+import { CsvRoute } from '../utils/csvUtils';
 
 // ── factory helpers ───────────────────────────────────────────────────────────
 
@@ -68,6 +69,11 @@ export type EditorContextType = {
   // Overlay scale multiplier (1 = auto A5-based, range 0.5–2)
   overlayScale: number;
   setOverlayScale: (s: number) => void;
+
+  // Routes parsed from the crag's sibling <Name>_routes.csv (if found next to
+  // the open image) — powers the "pick from CSV" dropdown in the sidebar.
+  cragCsvRoutes: CsvRoute[];
+  setCragCsvRoutes: (routes: CsvRoute[]) => void;
 
   // Export crop rectangle (percentage of image, null = no crop / full image)
   cropRect: CropRect | null;
@@ -133,6 +139,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
   const [hoveredRouteId, setHoveredRouteId] = useState<string | null>(null);
   const [overlayScale, setOverlayScale] = useState(1.0);
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
+  const [cragCsvRoutes, setCragCsvRoutes] = useState<CsvRoute[]>([]);
 
   const historyRef = useRef<Route[][]>([[]]);
   const historyIdxRef = useRef(0);
@@ -461,6 +468,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     setDrawingLineType,
     overlayScale,
     setOverlayScale,
+    cragCsvRoutes,
+    setCragCsvRoutes,
     cropRect,
     setCropRect,
     toPixel,

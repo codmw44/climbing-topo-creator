@@ -85,6 +85,12 @@ export type Route = {
   numberOverride?: number; // manual override — wins over `number` for display/export
   grade: FrenchGrade; // Overall grade (usually hardest pitch)
   pitches: Pitch[];
+  // Links this route to a specific "Route ID" row in the crag's <Name>_routes.csv
+  // (the CSV's first column, unique per crag). When set, name/number/grade are
+  // refreshed from that CSV row on topo open and on export — the CSV is the
+  // source of truth once a route is linked. Unset for routes never linked to a
+  // CSV row (drawn freehand, or from a topo predating this feature).
+  routeId?: number;
 };
 
 // Saved project state — written to JSON file

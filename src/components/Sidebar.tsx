@@ -5,6 +5,7 @@ import React, { useRef } from 'react';
 import { useEditor } from '../context/EditorContext';
 import { FrenchGrade, Route, Pitch } from '../types';
 import { FRENCH_GRADES, getDisplayNumber, getGradeColor } from '../constants';
+import { CsvRoute } from '../utils/csvUtils';
 
 export function Sidebar() {
   const {
@@ -22,6 +23,7 @@ export function Sidebar() {
     updatePitch,
     hoveredRouteId,
     setHoveredRouteId,
+    cragCsvRoutes,
   } = useEditor();
 
   const dragIdx = useRef<number | null>(null);
@@ -66,6 +68,7 @@ export function Sidebar() {
             onHover={(hov) => setHoveredRouteId(hov ? route.id : null)}
             onDelete={() => removeRoute(route.id)}
             onUpdate={(patch) => updateRoute(route.id, patch)}
+            csvRoutes={cragCsvRoutes}
             onAddPitch={() => addPitch(route.id)}
             onRemovePitch={(pitchId) => removePitch(route.id, pitchId)}
             onUpdatePitch={(pitchId, patch) => updatePitch(route.id, pitchId, patch)}
@@ -102,6 +105,7 @@ type RouteRowProps = {
   onHover: (hov: boolean) => void;
   onDelete: () => void;
   onUpdate: (patch: Partial<Omit<Route, 'id' | 'pitches'>>) => void;
+  csvRoutes: CsvRoute[];
   onAddPitch: () => void;
   onRemovePitch: (pitchId: string) => void;
   onUpdatePitch: (pitchId: string, patch: Partial<Omit<Pitch, 'id' | 'points'>>) => void;
@@ -113,7 +117,7 @@ type RouteRowProps = {
 
 function RouteRow({
   route, isSelected, isHovered, isDragOver, selectedPitchId, showName,
-  onSelect, onHover, onDelete, onUpdate, onAddPitch, onRemovePitch, onUpdatePitch,
+  onSelect, onHover, onDelete, onUpdate, csvRoutes, onAddPitch, onRemovePitch, onUpdatePitch,
   onDragStart, onDragOver, onDrop, onDragEnd,
 }: RouteRowProps) {
   const color = getGradeColor(route.grade);
@@ -169,6 +173,7 @@ function RouteRow({
             onChange={(e) => onUpdate({ name: e.target.value })}
             onClick={(e) => e.stopPropagation()}
             placeholder="Route name"
+            title={route.name}
           />
         )}
 
@@ -187,6 +192,34 @@ function RouteRow({
           ×
         </button>
       </div>
+
+      {/* Pick name/number/grade from the crag's routes CSV — own row so it
+          never squeezes the name input off the header row */}
+      {csvRoutes.length > 0 && (
+        <div className="route-csv-row" onClick={(e) => e.stopPropagation()}>
+          <CsvRouteSelect
+            csvRoutes={csvRoutes}
+            linkedRouteId={route.routeId}
+            onPick={(csvRoute) =>
+              onUpdate({
+                name: csvRoute.name,
+                numberOverride: csvRoute.routeNumber ?? undefined,
+                grade: csvRoute.grade,
+                routeId: csvRoute.routeId,
+              })
+            }
+          />
+          {route.routeId != null && (
+            <button
+              className="icon-btn"
+              onClick={() => onUpdate({ routeId: undefined })}
+              title="Unlink from CSV (name/grade/number stop auto-updating from it)"
+            >
+              🔗
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Pitch list (expanded when route selected) */}
       {isSelected && (
@@ -243,6 +276,39 @@ function PitchRow({ pitch, index, isSelected, onSelect, onDelete, onUpdate }: Pi
         ×
       </button>
     </div>
+  );
+}
+
+// ── CSV route picker ─────────────────────────────────────────────────────────
+// Lets the user fill name/number/grade from the crag's <Name>_routes.csv instead
+// of retyping data that's already authored there.
+
+type CsvRouteSelectProps = {
+  csvRoutes: CsvRoute[];
+  linkedRouteId?: number;
+  onPick: (route: CsvRoute) => void;
+};
+
+function CsvRouteSelect({ csvRoutes, linkedRouteId, onPick }: CsvRouteSelectProps) {
+  const linkedIdx = linkedRouteId != null ? csvRoutes.findIndex((r) => r.routeId === linkedRouteId) : -1;
+  return (
+    <select
+      className={`csv-route-select${linkedIdx !== -1 ? ' csv-route-select--linked' : ''}`}
+      value={linkedIdx !== -1 ? linkedIdx : ''}
+      onChange={(e) => {
+        const idx = parseInt(e.target.value, 10);
+        if (!Number.isNaN(idx) && csvRoutes[idx]) onPick(csvRoutes[idx]);
+      }}
+      onClick={(e) => e.stopPropagation()}
+      title={linkedIdx !== -1 ? 'Linked to this CSV row — name/grade/number auto-update from it' : "Fill name / number / grade from the crag's routes CSV"}
+    >
+      <option value="" disabled>↓ From CSV…</option>
+      {csvRoutes.map((r, idx) => (
+        <option key={`${r.routeId}-${idx}`} value={idx}>
+          {r.routeNumber != null ? `#${r.routeNumber} ` : ''}{r.name}{r.sector ? ` (${r.sector})` : ''}
+        </option>
+      ))}
+    </select>
   );
 }
 

@@ -10,6 +10,7 @@ import {
   scanImagesRecursively,
   FoundImage,
 } from '../utils/fsApi';
+import { loadCragCsv, refreshRoutesFromCsv } from '../utils/csvUtils';
 import { useToast } from './Toast';
 
 const HELP_CONTENT = [
@@ -42,6 +43,7 @@ export function Toolbar() {
     imageDataUrl, imagePath, imageSize, routes,
     setImage, setRoutes,
     overlayScale, setOverlayScale,
+    cragCsvRoutes, setCragCsvRoutes,
     cropRect, setCropRect,
   } = useEditor();
 
@@ -77,6 +79,27 @@ export function Toolbar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Refresh linked routes' name/number/grade from the CSV every time a new
+  // CSV loads (i.e. right after opening an image) — the CSV is the source of
+  // truth for any route with a routeId, so edits made there since the topo
+  // was last saved always win. Reads `routes` via a ref (rather than as a
+  // direct effect dependency) so this only re-runs when the CSV itself
+  // changes, not on every unrelated route edit.
+  const routesRef = useRef(routes);
+  routesRef.current = routes;
+  const prevCsvRoutesRef = useRef(cragCsvRoutes);
+  useEffect(() => {
+    if (cragCsvRoutes === prevCsvRoutesRef.current) return;
+    prevCsvRoutesRef.current = cragCsvRoutes;
+    if (cragCsvRoutes.length === 0) return;
+    const { routes: refreshed, staleRouteIds } = refreshRoutesFromCsv(routesRef.current, cragCsvRoutes);
+    setRoutes(refreshed);
+    if (staleRouteIds.length > 0) {
+      showToast(`${staleRouteIds.length} route(s) reference a Route ID no longer in the CSV.`, 'error');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cragCsvRoutes]);
+
   // Close help popup on outside click
   useEffect(() => {
     if (!showHelp) return;
@@ -109,7 +132,12 @@ export function Toolbar() {
   async function openFoundImage(found: FoundImage) {
     const file = await found.fileHandle.getFile();
     setCurrentImageDir(found.dirHandle);
+    // Clear routes from whatever was previously open — loadImageFile only
+    // repopulates them if the new image has its own sidecar .json project.
+    setRoutes([]);
     await loadImageFile(file, found.dirHandle);
+    const csvRoutes = await loadCragCsv(found.dirHandle, rootHandle).catch(() => []);
+    setCragCsvRoutes(csvRoutes);
   }
 
   function loadImageFile(file: File, dirHandle: FileSystemDirectoryHandle | null): Promise<void> {
@@ -177,6 +205,7 @@ export function Toolbar() {
       await persistDirHandle(handle);
       setRootHandle(handle);
       setSelectedPath('');
+      setCragCsvRoutes([]);
       const images = await rescan(handle);
       if (images.length === 0) showToast('No images found in this folder (or its subfolders).', 'error');
     } catch (err: unknown) {
@@ -193,14 +222,33 @@ export function Toolbar() {
 
   // ── save / export ───────────────────────────────────────────────────────────
 
+  // Re-reads the crag CSV fresh from disk and refreshes linked routes' name/
+  // number/grade from it — used right before save/export so those files
+  // reflect the CSV's current contents even if it was edited outside the
+  // topo tool since this image was opened. Also updates `cragCsvRoutes` so
+  // the sidebar's picker stays in sync. Returns the refreshed routes.
+  async function refreshFromCsvBeforeWrite(): Promise<import('../types').Route[]> {
+    const freshCsvRoutes = await loadCragCsv(currentImageDir, rootHandle).catch(() => []);
+    setCragCsvRoutes(freshCsvRoutes);
+    if (freshCsvRoutes.length === 0) return routes;
+    const { routes: refreshed, staleRouteIds } = refreshRoutesFromCsv(routes, freshCsvRoutes);
+    if (staleRouteIds.length > 0) {
+      showToast(`${staleRouteIds.length} route(s) reference a Route ID no longer in the CSV.`, 'error');
+    }
+    setRoutes(refreshed);
+    return refreshed;
+  }
+
   const handleSaveProject = async () => {
-    await saveProject({ imagePath, imageDataUrl, imageSize, routes, overlayScale, cropRect, dirHandle: currentImageDir });
+    const freshRoutes = await refreshFromCsvBeforeWrite();
+    await saveProject({ imagePath, imageDataUrl, imageSize, routes: freshRoutes, overlayScale, cropRect, dirHandle: currentImageDir });
     showToast(currentImageDir ? `Saved to ${currentImageDir.name}` : 'Project downloaded');
   };
 
   const handleExport = async () => {
     if (!imageDataUrl) { showToast('No image loaded.', 'error'); return; }
-    await exportImage({ imageDataUrl, imageSize, routes, overlayScale, imagePath, cropRect, dirHandle: currentImageDir });
+    const freshRoutes = await refreshFromCsvBeforeWrite();
+    await exportImage({ imageDataUrl, imageSize, routes: freshRoutes, overlayScale, imagePath, cropRect, dirHandle: currentImageDir });
     showToast(currentImageDir ? `Exported to ${currentImageDir.name}` : 'Image downloaded');
     if (rootHandle) await rescan(rootHandle); // drop the newly-exported "_withRoutes" file from the picker
   };

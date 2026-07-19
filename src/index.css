@@ -417,7 +417,8 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 
 .route-name-input {
   flex: 1;
-  min-width: 0;
+  min-width: 44px;
+  width: 0; /* let flex-basis (not content) drive sizing so it never forces horizontal scroll */
   background: transparent;
   border: none;
   outline: none;
@@ -426,6 +427,7 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
   font-family: inherit;
   font-weight: 500;
   cursor: text;
+  text-overflow: ellipsis;
 }
 .route-name-input:hover, .route-name-input:focus {
   background: var(--bg-item);
@@ -509,6 +511,35 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 }
 .grade-select:focus { border-color: var(--border-hl); }
 .grade-select--compact { min-width: 50px; font-size: 10px; }
+
+/* ── CSV route select ─────────────────────────────────────────────────────── */
+
+.route-csv-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 10px 8px 28px;
+}
+
+.csv-route-select {
+  flex: 1;
+  min-width: 0;
+  width: 0; /* let flex-basis (not content) drive sizing, same as .route-name-input */
+  padding: 4px 6px;
+  background: var(--bg-item);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-family: inherit;
+  cursor: pointer;
+  outline: none;
+}
+.csv-route-select:focus { border-color: var(--border-hl); }
+.csv-route-select--linked {
+  border-color: var(--accent);
+  color: var(--text-prim);
+}
 
 /* ── Icon buttons ─────────────────────────────────────────────────────────── */
 
