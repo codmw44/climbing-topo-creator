@@ -12,6 +12,25 @@ function baseName(filePath: string): string {
   return name.replace(/\.[^.]+$/, '');
 }
 
+// Low-resolution source photos (e.g. old phone photos) produce a low-res
+// canvas, so route lines/labels drawn crisply at that resolution still look
+// soft or pixelated once exported/printed. Upscaling the canvas itself (not
+// the source file) before drawing keeps the route overlay sharp, at the cost
+// of the original photo detail staying exactly as soft as it already was —
+// this does not "improve" the photo, only the overlay drawn on top of it.
+const MIN_EXPORT_LONG_EDGE_PX = 2048;
+
+/** No-op if the image's long edge already meets the floor. */
+function minExportSize(size: Size): Size {
+  const longEdge = Math.max(size.width, size.height);
+  if (longEdge >= MIN_EXPORT_LONG_EDGE_PX) return size;
+  const scale = MIN_EXPORT_LONG_EDGE_PX / longEdge;
+  return {
+    width: Math.round(size.width * scale),
+    height: Math.round(size.height * scale),
+  };
+}
+
 // ── Save ─────────────────────────────────────────────────────────────────────
 // Image is NOT embedded — save only the filename. Load image separately.
 
@@ -96,7 +115,7 @@ function resolveExportLabels(
 
 export async function exportImage({
   imageDataUrl,
-  imageSize,
+  imageSize: sourceImageSize,
   routes,
   overlayScale,
   imagePath,
@@ -111,10 +130,22 @@ export async function exportImage({
   cropRect?: CropRect | null;
   dirHandle?: FileSystemDirectoryHandle | null;
 }) {
+  // Canvas is drawn at (at least) MIN_EXPORT_LONG_EDGE_PX so the route overlay
+  // stays sharp even when the source photo itself is low-resolution — see
+  // minExportSize()'s comment. Every pixel position below is computed from
+  // this (possibly upscaled) size, not the source image's native size, since
+  // points are stored as percentages and scale to whatever size is drawn.
+  const imageSize = minExportSize(sourceImageSize);
+
   const canvas = document.createElement('canvas');
   canvas.width = imageSize.width;
   canvas.height = imageSize.height;
   const ctx = canvas.getContext('2d')!;
+  // Best available resampling for the upscale case above — browsers default
+  // to 'low', which looks noticeably worse than necessary when stretching a
+  // small source image up to the export floor.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
 
   const img = await loadImg(imageDataUrl);
   ctx.drawImage(img, 0, 0, imageSize.width, imageSize.height);
