@@ -98,6 +98,7 @@ export type ProjectState = {
   version: 1;
   imagePath: string; // Original filename (user must re-open image on load)
   routes: Route[];
+  annotations?: Annotation[];
   overlayScale?: number;
   cropRect?: CropRect;
 };
@@ -107,10 +108,60 @@ export type EditorMode =
   | 'select'       // Pointer mode: click to select routes/points
   | 'draw'         // Click on image to add points to current pitch
   | 'move'         // Drag existing points
-  | 'crop';        // Adjust export crop rectangle
+  | 'crop'         // Adjust export crop rectangle
+  | 'annotate';    // Place/edit non-route annotations (area/text/arrow/trail)
 
 export type ZoomState = {
   scale: number;
   offsetX: number;
   offsetY: number;
 };
+
+// ── Annotations ───────────────────────────────────────────────────────────────
+// Freeform extras drawn on top of a topo, alongside routes: sector-area
+// highlights, bilingual text callouts, arrows, and dashed approach trails.
+
+export type AnnotationType = 'area' | 'text' | 'arrow' | 'trail';
+
+// Sub-tool active while in 'annotate' mode — which kind of annotation a click
+// on the canvas will create/continue.
+export type AnnotationTool = AnnotationType;
+
+export type AreaAnnotation = {
+  id: string;
+  type: 'area';
+  points: Position[]; // polygon vertices, percentage-of-image, closed implicitly
+  color: string;       // fill/stroke color, e.g. '#ffeb3b'
+  label?: string;
+  labelAr?: string;
+};
+
+export type TextAnnotation = {
+  id: string;
+  type: 'text';
+  x: number;
+  y: number;
+  units: 'percentage';
+  text: string;
+  textAr?: string;
+  color: string;      // text fill color
+  fontSize: number;   // multiplier applied on top of the overlay's base mm size (1 = default)
+  rotation?: number;  // degrees, clockwise, about (x, y) — 0/undefined = horizontal
+};
+
+export type ArrowAnnotation = {
+  id: string;
+  type: 'arrow';
+  from: Position;
+  to: Position;
+  color: string;
+};
+
+export type TrailAnnotation = {
+  id: string;
+  type: 'trail';
+  points: Position[]; // waypoints, percentage-of-image
+  color: string;
+};
+
+export type Annotation = AreaAnnotation | TextAnnotation | ArrowAnnotation | TrailAnnotation;

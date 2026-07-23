@@ -12,12 +12,17 @@ import {
 } from '../utils/fsApi';
 import { loadCragCsv, refreshRoutesFromCsv } from '../utils/csvUtils';
 import { useToast } from './Toast';
+import { ANNOTATION_TOOL_ICON, ANNOTATION_TOOL_LABEL } from '../constants';
+import { AnnotationType } from '../types';
+
+const ANNOTATION_TOOLS: AnnotationType[] = ['area', 'text', 'arrow', 'trail'];
 
 const HELP_CONTENT = [
   { section: 'Modes' },
   { key: 'V / Esc',       desc: 'Select mode' },
   { key: 'D',             desc: 'Draw mode' },
   { key: 'C',             desc: 'Crop mode' },
+  { key: 'A',             desc: 'Annotate mode' },
   { section: 'History' },
   { key: 'Ctrl+Z',        desc: 'Undo' },
   { key: 'Ctrl+Y / Ctrl+Shift+Z', desc: 'Redo' },
@@ -30,6 +35,15 @@ const HELP_CONTENT = [
   { section: 'Drawing' },
   { key: 'Click canvas',  desc: 'Add waypoint' },
   { key: 'Shift+click point', desc: 'Point options menu' },
+  { section: 'Annotations' },
+  { key: 'Area / Trail',  desc: 'Click to add vertices' },
+  { key: 'Enter / dbl-click', desc: 'Finish area/trail shape' },
+  { key: 'Arrow tool',    desc: 'Click tail, then click head' },
+  { key: 'Text tool',     desc: 'Click to place a label' },
+  { key: 'Drag vertex twice (dbl-click)', desc: 'Delete that vertex' },
+  { key: 'Sidebar row click', desc: 'Select an annotation to edit it (switches to Select mode)' },
+  { key: 'Drag text / arrow endpoint', desc: 'Reposition or reshape' },
+  { key: 'Drag text rotate handle', desc: 'Rotate the label' },
 ];
 
 export function Toolbar() {
@@ -45,6 +59,9 @@ export function Toolbar() {
     overlayScale, setOverlayScale,
     cragCsvRoutes, setCragCsvRoutes,
     cropRect, setCropRect,
+    annotations, setAnnotations,
+    annotationTool, setAnnotationTool,
+    inProgressAnnotationId, finishAnnotationPath,
   } = useEditor();
 
   const { showToast } = useToast();
@@ -132,9 +149,10 @@ export function Toolbar() {
   async function openFoundImage(found: FoundImage) {
     const file = await found.fileHandle.getFile();
     setCurrentImageDir(found.dirHandle);
-    // Clear routes from whatever was previously open — loadImageFile only
-    // repopulates them if the new image has its own sidecar .json project.
+    // Clear routes/annotations from whatever was previously open — loadImageFile
+    // only repopulates them if the new image has its own sidecar .json project.
     setRoutes([]);
+    setAnnotations([]);
     await loadImageFile(file, found.dirHandle);
     const csvRoutes = await loadCragCsv(found.dirHandle, rootHandle).catch(() => []);
     setCragCsvRoutes(csvRoutes);
@@ -173,7 +191,7 @@ export function Toolbar() {
   // (needed to resolve the saved imagePath if the image itself isn't open yet).
   async function loadJsonText(text: string, dirHandle: FileSystemDirectoryHandle | null, skipImageLoad = false) {
     const json = JSON.parse(text);
-    const savedImageName = loadProject(json, setImage, setRoutes, setOverlayScale);
+    const savedImageName = loadProject(json, setImage, setRoutes, setOverlayScale, setAnnotations);
     if (skipImageLoad) {
       // Image is already loaded (setImage already ran) — apply crop directly.
       setCropRect(json.cropRect ?? null);
@@ -241,14 +259,14 @@ export function Toolbar() {
 
   const handleSaveProject = async () => {
     const freshRoutes = await refreshFromCsvBeforeWrite();
-    await saveProject({ imagePath, imageDataUrl, imageSize, routes: freshRoutes, overlayScale, cropRect, dirHandle: currentImageDir });
+    await saveProject({ imagePath, imageDataUrl, imageSize, routes: freshRoutes, annotations, overlayScale, cropRect, dirHandle: currentImageDir });
     showToast(currentImageDir ? `Saved to ${currentImageDir.name}` : 'Project downloaded');
   };
 
   const handleExport = async () => {
     if (!imageDataUrl) { showToast('No image loaded.', 'error'); return; }
     const freshRoutes = await refreshFromCsvBeforeWrite();
-    await exportImage({ imageDataUrl, imageSize, routes: freshRoutes, overlayScale, imagePath, cropRect, dirHandle: currentImageDir });
+    await exportImage({ imageDataUrl, imageSize, routes: freshRoutes, annotations, overlayScale, imagePath, cropRect, dirHandle: currentImageDir });
     showToast(currentImageDir ? `Exported to ${currentImageDir.name}` : 'Image downloaded');
     if (rootHandle) await rescan(rootHandle); // drop the newly-exported "_withRoutes" file from the picker
   };
@@ -356,7 +374,41 @@ export function Toolbar() {
             ✕ Clear crop
           </button>
         )}
+        <button
+          className={`toolbar-btn ${mode === 'annotate' ? 'toolbar-btn--active' : ''}`}
+          onClick={() => setMode('annotate')}
+          disabled={!imageDataUrl}
+          title="Annotate mode (A) — area highlights, text, arrows, trails"
+        >
+          ✎ Annotate
+        </button>
       </div>
+      {mode === 'annotate' && (
+        <>
+          <div className="toolbar-divider" />
+          <div className="toolbar-group">
+            {ANNOTATION_TOOLS.map((t) => (
+              <button
+                key={t}
+                className={`toolbar-btn ${annotationTool === t ? 'toolbar-btn--active' : ''}`}
+                onClick={() => setAnnotationTool(t)}
+                title={`${ANNOTATION_TOOL_LABEL[t]} tool`}
+              >
+                {ANNOTATION_TOOL_ICON[t]} {ANNOTATION_TOOL_LABEL[t]}
+              </button>
+            ))}
+            {inProgressAnnotationId && (
+              <button
+                className="toolbar-btn toolbar-btn--primary"
+                onClick={finishAnnotationPath}
+                title="Finish shape (Enter / double-click)"
+              >
+                ✓ Finish shape
+              </button>
+            )}
+          </div>
+        </>
+      )}
       <div className="toolbar-divider" />
       <div className="toolbar-group">
         <button

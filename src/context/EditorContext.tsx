@@ -7,6 +7,10 @@ import React, {
 } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  Annotation,
+  AnnotationTool,
+  AreaAnnotation,
+  ArrowAnnotation,
   CropRect,
   EditorMode,
   FrenchGrade,
@@ -16,9 +20,12 @@ import {
   PositionPx,
   Route,
   Size,
+  TextAnnotation,
+  TrailAnnotation,
   ZoomState,
 } from '../types';
 import { CsvRoute } from '../utils/csvUtils';
+import { DEFAULT_ANNOTATION_COLOR } from '../constants';
 
 // ── factory helpers ───────────────────────────────────────────────────────────
 
@@ -34,6 +41,31 @@ export function makeRoute(number: number): Route {
     grade: '' as FrenchGrade,
     pitches: [makeEmptyPitch()],
   };
+}
+
+export function makeTextAnnotation(pos: Position): TextAnnotation {
+  return {
+    id: uuidv4(),
+    type: 'text',
+    x: pos.x,
+    y: pos.y,
+    units: 'percentage',
+    text: 'Label',
+    color: DEFAULT_ANNOTATION_COLOR.text,
+    fontSize: 1,
+  };
+}
+
+export function makeAreaAnnotation(): AreaAnnotation {
+  return { id: uuidv4(), type: 'area', points: [], color: DEFAULT_ANNOTATION_COLOR.area };
+}
+
+export function makeTrailAnnotation(): TrailAnnotation {
+  return { id: uuidv4(), type: 'trail', points: [], color: DEFAULT_ANNOTATION_COLOR.trail };
+}
+
+export function makeArrowAnnotation(from: Position, to: Position): ArrowAnnotation {
+  return { id: uuidv4(), type: 'arrow', from, to, color: DEFAULT_ANNOTATION_COLOR.arrow };
 }
 
 // ── context shape ─────────────────────────────────────────────────────────────
@@ -82,6 +114,28 @@ export type EditorContextType = {
   // Coordinate conversion
   toPixel: (pos: Position) => PositionPx;
   toPercent: (px: PositionPx, containerSize: Size) => Position;
+
+  // Annotations (area highlights, text labels, arrows, dashed trails)
+  annotations: Annotation[];
+  setAnnotations: (annotations: Annotation[]) => void;
+  annotationTool: AnnotationTool;
+  setAnnotationTool: (t: AnnotationTool) => void;
+  selectedAnnotationId: string | null;
+  setSelectedAnnotationId: (id: string | null) => void;
+  inProgressAnnotationId: string | null; // area/trail currently being clicked out, finish with Enter/dblclick
+  addAnnotationPoint: (pos: Position) => void; // area/trail: append vertex (or start new one)
+  finishAnnotationPath: () => void;            // area/trail: commit in-progress shape
+  addTextAnnotation: (pos: Position) => void;
+  addArrowAnnotation: (from: Position, to: Position) => void;
+  updateAnnotation: (id: string, patch: Partial<Annotation>) => void;
+  removeAnnotation: (id: string) => void;
+  moveAnnotationPoint: (id: string, pointIndex: number, pos: Position) => void;
+  commitAnnotationPoint: (id: string, pointIndex: number, pos: Position) => void;
+  removeAnnotationPoint: (id: string, pointIndex: number) => void;
+  // Whole-shape drag (text position, arrow endpoints/rotation) — live variant
+  // during pointermove, commit variant on pointerup (pushes undo history).
+  moveAnnotation: (id: string, patch: Partial<Annotation>) => void;
+  commitAnnotationMove: (id: string, patch: Partial<Annotation>) => void;
 
   // Route mutations
   addRoute: () => void;
@@ -141,14 +195,24 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
   const [cropRect, setCropRect] = useState<CropRect | null>(null);
   const [cragCsvRoutes, setCragCsvRoutes] = useState<CsvRoute[]>([]);
 
-  const historyRef = useRef<Route[][]>([[]]);
+  const [annotations, setAnnotationsRaw] = useState<Annotation[]>([]);
+  const [annotationTool, setAnnotationTool] = useState<AnnotationTool>('area');
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [inProgressAnnotationId, setInProgressAnnotationId] = useState<string | null>(null);
+
+  // Undo/redo covers both routes and annotations as one combined history —
+  // every user-visible edit to either (add/remove/reorder/finish-drag) pushes
+  // one combined snapshot, so Ctrl+Z always undoes the single most recent
+  // change regardless of which list it touched.
+  type HistoryState = { routes: Route[]; annotations: Annotation[] };
+  const historyRef = useRef<HistoryState[]>([{ routes: [], annotations: [] }]);
   const historyIdxRef = useRef(0);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  const pushHistory = useCallback((newRoutes: Route[]) => {
+  const pushHistory = useCallback((state: HistoryState) => {
     const trimmed = historyRef.current.slice(0, historyIdxRef.current + 1);
-    trimmed.push(newRoutes);
+    trimmed.push(state);
     if (trimmed.length > MAX_HISTORY) trimmed.shift();
     historyRef.current = trimmed;
     historyIdxRef.current = trimmed.length - 1;
@@ -156,10 +220,23 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     setCanRedo(false);
   }, []);
 
+  const routesRef = useRef(routes);
+  routesRef.current = routes;
+  const annotationsRef = useRef(annotations);
+  annotationsRef.current = annotations;
+
   const setRoutes = useCallback(
     (newRoutes: Route[]) => {
       setRoutesRaw(newRoutes);
-      pushHistory(newRoutes);
+      pushHistory({ routes: newRoutes, annotations: annotationsRef.current });
+    },
+    [pushHistory],
+  );
+
+  const setAnnotations = useCallback(
+    (newAnnotations: Annotation[]) => {
+      setAnnotationsRaw(newAnnotations);
+      pushHistory({ routes: routesRef.current, annotations: newAnnotations });
     },
     [pushHistory],
   );
@@ -168,7 +245,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     if (historyIdxRef.current <= 0) return;
     historyIdxRef.current -= 1;
     const state = historyRef.current[historyIdxRef.current];
-    setRoutesRaw(state);
+    setRoutesRaw(state.routes);
+    setAnnotationsRaw(state.annotations);
     setCanUndo(historyIdxRef.current > 0);
     setCanRedo(true);
   }, []);
@@ -177,7 +255,8 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     if (historyIdxRef.current >= historyRef.current.length - 1) return;
     historyIdxRef.current += 1;
     const state = historyRef.current[historyIdxRef.current];
-    setRoutesRaw(state);
+    setRoutesRaw(state.routes);
+    setAnnotationsRaw(state.annotations);
     setCanUndo(true);
     setCanRedo(historyIdxRef.current < historyRef.current.length - 1);
   }, []);
@@ -393,7 +472,7 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
             }),
           };
         });
-        pushHistory(updated);
+        pushHistory({ routes: updated, annotations: annotationsRef.current });
         return updated;
       });
     },
@@ -450,6 +529,145 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     [routes, setRoutes],
   );
 
+  // ── annotation mutations ─────────────────────────────────────────────────────
+  // Area/trail are built the same way routes/pitches are: click adds a vertex to
+  // the in-progress shape, Enter/double-click/mode-switch commits it. Text and
+  // arrow are placed in one shot (no multi-click path).
+
+  const addAnnotationPoint = useCallback(
+    (pos: Position) => {
+      if (annotationTool !== 'area' && annotationTool !== 'trail') return;
+      if (inProgressAnnotationId) {
+        setAnnotations(
+          annotations.map((a) =>
+            a.id === inProgressAnnotationId && (a.type === 'area' || a.type === 'trail')
+              ? { ...a, points: [...a.points, pos] }
+              : a,
+          ),
+        );
+        return;
+      }
+      const created = annotationTool === 'area' ? makeAreaAnnotation() : makeTrailAnnotation();
+      created.points = [pos];
+      setAnnotations([...annotations, created]);
+      setInProgressAnnotationId(created.id);
+      setSelectedAnnotationId(created.id);
+    },
+    [annotations, annotationTool, inProgressAnnotationId],
+  );
+
+  const finishAnnotationPath = useCallback(() => {
+    if (!inProgressAnnotationId) return;
+    // Drop shapes finished with fewer than 2 vertices — nothing to draw.
+    const shape = annotations.find((a) => a.id === inProgressAnnotationId);
+    if (shape && (shape.type === 'area' || shape.type === 'trail') && shape.points.length < 2) {
+      setAnnotations(annotations.filter((a) => a.id !== inProgressAnnotationId));
+      setSelectedAnnotationId(null);
+    }
+    setInProgressAnnotationId(null);
+  }, [annotations, inProgressAnnotationId]);
+
+  const addTextAnnotation = useCallback(
+    (pos: Position) => {
+      const created = makeTextAnnotation(pos);
+      setAnnotations([...annotations, created]);
+      setSelectedAnnotationId(created.id);
+    },
+    [annotations],
+  );
+
+  const addArrowAnnotation = useCallback(
+    (from: Position, to: Position) => {
+      const created = makeArrowAnnotation(from, to);
+      setAnnotations([...annotations, created]);
+      setSelectedAnnotationId(created.id);
+    },
+    [annotations],
+  );
+
+  const updateAnnotation = useCallback(
+    (id: string, patch: Partial<Annotation>) => {
+      setAnnotations(
+        annotations.map((a) => (a.id === id ? ({ ...a, ...patch } as Annotation) : a)),
+      );
+    },
+    [annotations],
+  );
+
+  const removeAnnotation = useCallback(
+    (id: string) => {
+      setAnnotations(annotations.filter((a) => a.id !== id));
+      if (selectedAnnotationId === id) setSelectedAnnotationId(null);
+      if (inProgressAnnotationId === id) setInProgressAnnotationId(null);
+    },
+    [annotations, selectedAnnotationId, inProgressAnnotationId],
+  );
+
+  // Live drag (pointermove) vs. commit (pointerup) split, same reasoning as
+  // routes' movePoint/commitMove: dragging fires on every pointer move and
+  // would otherwise flood undo history with one entry per pixel. Only the
+  // commit variants push to history; the live variants mutate state directly.
+
+  const moveAnnotationPoint = useCallback(
+    (id: string, pointIndex: number, pos: Position) => {
+      setAnnotationsRaw((prev) =>
+        prev.map((a) => {
+          if (a.id !== id || (a.type !== 'area' && a.type !== 'trail')) return a;
+          return { ...a, points: a.points.map((p, i) => (i === pointIndex ? pos : p)) };
+        }),
+      );
+    },
+    [],
+  );
+
+  const commitAnnotationPoint = useCallback(
+    (id: string, pointIndex: number, pos: Position) => {
+      setAnnotationsRaw((prev) => {
+        const updated = prev.map((a) => {
+          if (a.id !== id || (a.type !== 'area' && a.type !== 'trail')) return a;
+          return { ...a, points: a.points.map((p, i) => (i === pointIndex ? pos : p)) };
+        });
+        pushHistory({ routes: routesRef.current, annotations: updated });
+        return updated;
+      });
+    },
+    [pushHistory],
+  );
+
+  const removeAnnotationPoint = useCallback(
+    (id: string, pointIndex: number) => {
+      setAnnotations(
+        annotations.map((a) => {
+          if (a.id !== id || (a.type !== 'area' && a.type !== 'trail')) return a;
+          return { ...a, points: a.points.filter((_, i) => i !== pointIndex) };
+        }),
+      );
+    },
+    [annotations],
+  );
+
+  // Whole-shape move: text (x/y) and arrow (from/to endpoints, dragged
+  // independently — which also re-angles the arrow, i.e. "rotates" it).
+  const moveAnnotation = useCallback(
+    (id: string, patch: Partial<Annotation>) => {
+      setAnnotationsRaw((prev) =>
+        prev.map((a) => (a.id === id ? ({ ...a, ...patch } as Annotation) : a)),
+      );
+    },
+    [],
+  );
+
+  const commitAnnotationMove = useCallback(
+    (id: string, patch: Partial<Annotation>) => {
+      setAnnotationsRaw((prev) => {
+        const updated = prev.map((a) => (a.id === id ? ({ ...a, ...patch } as Annotation) : a));
+        pushHistory({ routes: routesRef.current, annotations: updated });
+        return updated;
+      });
+    },
+    [pushHistory],
+  );
+
   const value: EditorContextType = {
     imageDataUrl,
     imagePath,
@@ -474,6 +692,24 @@ export function EditorProvider({ children }: { children: React.ReactNode }) {
     setCropRect,
     toPixel,
     toPercent,
+    annotations,
+    setAnnotations,
+    annotationTool,
+    setAnnotationTool,
+    selectedAnnotationId,
+    setSelectedAnnotationId,
+    inProgressAnnotationId,
+    addAnnotationPoint,
+    finishAnnotationPath,
+    addTextAnnotation,
+    addArrowAnnotation,
+    updateAnnotation,
+    removeAnnotation,
+    moveAnnotationPoint,
+    commitAnnotationPoint,
+    removeAnnotationPoint,
+    moveAnnotation,
+    commitAnnotationMove,
     addRoute,
     removeRoute,
     updateRoute,

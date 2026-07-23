@@ -126,3 +126,45 @@ export function getOverlaySizes(imageWidth: number, overlayScale: number) {
     pxPerMm,
   };
 }
+
+// ── Annotations ───────────────────────────────────────────────────────────────
+
+export const ANNOTATION_COLORS: string[] = [
+  '#ffeb3b', // yellow
+  '#ff5252', // red
+  '#4fc3f7', // blue
+  '#69f0ae', // green
+  '#ffffff', // white
+  '#ff9100', // orange
+  '#000000', // black
+];
+
+// Every annotation color renders with a dark contrast outline behind it
+// (rgba(0,0,0,~0.65-0.85) in the SVG/canvas renderers) so it reads over any
+// photo — except black, which would vanish against its own black-on-black
+// outline. Black instead gets a white outline, so this is the one color that
+// needs a per-color outline lookup rather than a single hardcoded constant.
+export function getAnnotationOutlineColor(fillColor: string): string {
+  return fillColor.toLowerCase() === '#000000' ? 'rgba(255,255,255,0.9)' : 'rgba(0,0,0,0.75)';
+}
+
+export const DEFAULT_ANNOTATION_COLOR: Record<import('./types').AnnotationType, string> = {
+  area: '#ffeb3b',
+  text: '#ffffff',
+  arrow: '#ff5252',
+  trail: '#ffffff',
+};
+
+export const ANNOTATION_TOOL_LABEL: Record<import('./types').AnnotationType, string> = {
+  area: 'Area',
+  text: 'Text',
+  arrow: 'Arrow',
+  trail: 'Trail',
+};
+
+export const ANNOTATION_TOOL_ICON: Record<import('./types').AnnotationType, string> = {
+  area: '▱',
+  text: 'T',
+  arrow: '➜',
+  trail: '┄',
+};

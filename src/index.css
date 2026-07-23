@@ -562,6 +562,105 @@ body { overflow: hidden; height: 100vh; width: 100vw; }
 .icon-btn:hover { background: var(--bg-hover); color: var(--text-prim); }
 .icon-btn--danger:hover { background: rgba(231,76,60,0.2); color: var(--danger); }
 
+/* ── Annotations list ─────────────────────────────────────────────────────── */
+
+.sidebar-header--annotations {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.annotation-list {
+  flex: 0 1 40%;
+  overflow-y: auto;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.annotation-list::-webkit-scrollbar { width: 4px; }
+.annotation-list::-webkit-scrollbar-track { background: transparent; }
+.annotation-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+.annotation-row {
+  border-bottom: 1px solid var(--border);
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.annotation-row:hover { background: var(--bg-hover); }
+.annotation-row--selected { background: var(--bg-sel); }
+
+.annotation-row-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.annotation-type-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+  width: 16px;
+  text-align: center;
+}
+
+.annotation-type-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.annotation-summary {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-sec);
+}
+
+.annotation-row-extra {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 0 0 22px;
+  flex-wrap: wrap;
+}
+
+.annotation-ar-input {
+  flex: 1 1 100%;
+  min-width: 60px;
+}
+
+.annotation-fontsize-slider {
+  width: 44px;
+  flex-shrink: 0;
+}
+
+.annotation-slider-label {
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.annotation-color-row {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.annotation-color-swatch {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 1.5px solid transparent;
+  cursor: pointer;
+  padding: 0;
+}
+.annotation-color-swatch--active {
+  border-color: var(--text-prim);
+}
+
 /* ── Grade legend ─────────────────────────────────────────────────────────── */
 
 .grade-legend {

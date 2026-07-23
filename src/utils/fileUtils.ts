@@ -1,8 +1,9 @@
-import { CropRect, ProjectState, Route, Size } from '../types';
+import { Annotation, CropRect, ProjectState, Route, Size } from '../types';
 import { buildSegmentPaths } from './pathUtils';
 import { getDisplayNumber, getGradeColor, getOverlaySizes, getRouteLabelLayout } from '../constants';
 import { resolveLabels, RouteLayoutInfo } from './labelLayout';
 import { writeTextToDir, writeBlobToDir } from './fsApi';
+import { drawAnnotationsToCanvas } from './annotationCanvas';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ function minExportSize(size: Size): Size {
 export async function saveProject({
   imagePath,
   routes,
+  annotations,
   overlayScale,
   cropRect,
   dirHandle,
@@ -45,13 +47,21 @@ export async function saveProject({
   imageDataUrl: string | null; // ignored — kept for call-site compat
   imageSize: Size;             // ignored
   routes: Route[];
+  annotations?: Annotation[];
   overlayScale: number;
   cropRect?: CropRect | null;
   dirHandle?: FileSystemDirectoryHandle | null;
 }): Promise<void> {
   const filename = (baseName(imagePath) || 'beta-creator-project') + '.json';
   const text = JSON.stringify(
-    { version: 1, imagePath, routes, overlayScale, cropRect: cropRect ?? undefined } as ProjectState,
+    {
+      version: 1,
+      imagePath,
+      routes,
+      annotations: annotations?.length ? annotations : undefined,
+      overlayScale,
+      cropRect: cropRect ?? undefined,
+    } as ProjectState,
     null,
     2,
   );
@@ -77,10 +87,12 @@ export function loadProject(
   _setImage: (dataUrl: string, path: string, size: Size) => void,
   setRoutes: (routes: Route[]) => void,
   setOverlayScale: (s: number) => void,
+  setAnnotations?: (annotations: Annotation[]) => void,
 ): string {
   const state = json as ProjectState;
   if (state.version !== 1) throw new Error('Unknown project version');
   setRoutes(state.routes ?? []);
+  setAnnotations?.(state.annotations ?? []);
   if (state.overlayScale != null) setOverlayScale(state.overlayScale);
   // Return the saved image filename so the UI can prompt the user
   return state.imagePath ?? '';
@@ -117,6 +129,7 @@ export async function exportImage({
   imageDataUrl,
   imageSize: sourceImageSize,
   routes,
+  annotations,
   overlayScale,
   imagePath,
   cropRect,
@@ -125,6 +138,7 @@ export async function exportImage({
   imageDataUrl: string;
   imageSize: Size;
   routes: Route[];
+  annotations?: Annotation[];
   overlayScale: number;
   imagePath: string;
   cropRect?: CropRect | null;
@@ -151,6 +165,9 @@ export async function exportImage({
   ctx.drawImage(img, 0, 0, imageSize.width, imageSize.height);
 
   const sizes = getOverlaySizes(imageSize.width, overlayScale);
+
+  // Area highlights sit under route lines/labels so those stay legible.
+  drawAnnotationsToCanvas(ctx, (annotations ?? []).filter((a) => a.type === 'area'), imageSize, sizes);
 
   // Helper: compute display points for a pitch (auto-join from previous pitch end)
   function getDisplayPts(route: Route, pitchIdx: number) {
@@ -225,6 +242,14 @@ export async function exportImage({
     const lp = labelPositions.get(route.id);
     if (lp) drawRouteLabel(ctx, lp.px, lp.py, getDisplayNumber(route), route.grade, getGradeColor(route.grade), sizes);
   }
+
+  // Trails, arrows, and text labels sit on top of everything else.
+  drawAnnotationsToCanvas(
+    ctx,
+    (annotations ?? []).filter((a) => a.type !== 'area'),
+    imageSize,
+    sizes,
+  );
 
   const filename = (baseName(imagePath) || 'topo') + '_withRoutes.jpg';
 

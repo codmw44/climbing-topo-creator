@@ -1,10 +1,11 @@
 /**
- * Right-side panel: route list + selected route/pitch editor.
+ * Right-side panel: route list + selected route/pitch editor, plus the
+ * Annotations list (area highlights / text / arrows / trails).
  */
 import React, { useRef } from 'react';
 import { useEditor } from '../context/EditorContext';
-import { FrenchGrade, Route, Pitch } from '../types';
-import { FRENCH_GRADES, getDisplayNumber, getGradeColor } from '../constants';
+import { FrenchGrade, Route, Pitch, Annotation } from '../types';
+import { FRENCH_GRADES, getDisplayNumber, getGradeColor, ANNOTATION_COLORS, ANNOTATION_TOOL_ICON, ANNOTATION_TOOL_LABEL } from '../constants';
 import { CsvRoute } from '../utils/csvUtils';
 
 export function Sidebar() {
@@ -24,6 +25,11 @@ export function Sidebar() {
     hoveredRouteId,
     setHoveredRouteId,
     cragCsvRoutes,
+    annotations,
+    selectedAnnotationId,
+    setSelectedAnnotationId,
+    updateAnnotation,
+    removeAnnotation,
   } = useEditor();
 
   const dragIdx = useRef<number | null>(null);
@@ -82,6 +88,29 @@ export function Sidebar() {
               setDragOver(null);
             }}
             onDragEnd={() => { dragIdx.current = null; setDragOver(null); }}
+          />
+        ))}
+      </div>
+
+      {/* Annotations list */}
+      <div className="sidebar-header sidebar-header--annotations">
+        <span className="sidebar-title">Annotations</span>
+        <span className="sidebar-count">{annotations.length}</span>
+      </div>
+      <div className="annotation-list">
+        {annotations.length === 0 && (
+          <p className="route-list-empty">No annotations yet. Use the Annotate mode in the toolbar.</p>
+        )}
+        {annotations.map((a) => (
+          <AnnotationRow
+            key={a.id}
+            annotation={a}
+            isSelected={a.id === selectedAnnotationId}
+            // Select mode (not annotate) — annotate mode's canvas clicks always
+            // place a new shape, which would fight with editing this one.
+            onSelect={() => { setSelectedAnnotationId(a.id); setMode('select'); }}
+            onDelete={() => removeAnnotation(a.id)}
+            onUpdate={(patch) => updateAnnotation(a.id, patch)}
           />
         ))}
       </div>
@@ -275,6 +304,110 @@ function PitchRow({ pitch, index, isSelected, onSelect, onDelete, onUpdate }: Pi
       >
         ×
       </button>
+    </div>
+  );
+}
+
+// ── Annotation row ───────────────────────────────────────────────────────────
+
+type AnnotationRowProps = {
+  annotation: Annotation;
+  isSelected: boolean;
+  onSelect: () => void;
+  onDelete: () => void;
+  onUpdate: (patch: Partial<Annotation>) => void;
+};
+
+function AnnotationRow({ annotation, isSelected, onSelect, onDelete, onUpdate }: AnnotationRowProps) {
+  const a = annotation;
+  return (
+    <div
+      className={`annotation-row ${isSelected ? 'annotation-row--selected' : ''}`}
+      onClick={onSelect}
+    >
+      <div className="annotation-row-header">
+        <span className="annotation-type-icon" style={{ color: a.color }}>
+          {ANNOTATION_TOOL_ICON[a.type]}
+        </span>
+        <span className="annotation-type-label">{ANNOTATION_TOOL_LABEL[a.type]}</span>
+
+        {a.type === 'text' ? (
+          <input
+            className="route-name-input"
+            value={a.text}
+            onChange={(e) => onUpdate({ text: e.target.value } as Partial<Annotation>)}
+            onClick={(e) => e.stopPropagation()}
+            placeholder="English text"
+          />
+        ) : (
+          <span className="annotation-summary">
+            {(a.type === 'area' || a.type === 'trail') ? `${a.points.length} pts` : 'arrow'}
+          </span>
+        )}
+
+        <ColorSwatchPicker
+          value={a.color}
+          onChange={(color) => onUpdate({ color } as Partial<Annotation>)}
+        />
+
+        <button
+          className="icon-btn icon-btn--danger"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          title="Delete annotation"
+        >
+          ×
+        </button>
+      </div>
+
+      {a.type === 'text' && (
+        <div className="annotation-row-extra" onClick={(e) => e.stopPropagation()}>
+          <input
+            className="route-name-input annotation-ar-input"
+            dir="rtl"
+            value={a.textAr ?? ''}
+            onChange={(e) => onUpdate({ textAr: e.target.value } as Partial<Annotation>)}
+            placeholder="النص العربي"
+          />
+          <span className="annotation-slider-label" title="Text size">⤢</span>
+          <input
+            type="range"
+            min={0.5}
+            max={2.5}
+            step={0.1}
+            value={a.fontSize}
+            onChange={(e) => onUpdate({ fontSize: parseFloat(e.target.value) } as Partial<Annotation>)}
+            className="toolbar-slider annotation-fontsize-slider"
+            title={`Text size: ${Math.round(a.fontSize * 100)}%`}
+          />
+          <span className="annotation-slider-label" title="Rotation">⟳</span>
+          <input
+            type="range"
+            min={-180}
+            max={180}
+            step={1}
+            value={a.rotation ?? 0}
+            onChange={(e) => onUpdate({ rotation: parseFloat(e.target.value) } as Partial<Annotation>)}
+            className="toolbar-slider annotation-fontsize-slider"
+            title={`Rotation: ${Math.round(a.rotation ?? 0)}°`}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ColorSwatchPicker({ value, onChange }: { value: string; onChange: (c: string) => void }) {
+  return (
+    <div className="annotation-color-row" onClick={(e) => e.stopPropagation()}>
+      {ANNOTATION_COLORS.map((c) => (
+        <button
+          key={c}
+          className={`annotation-color-swatch${c === value ? ' annotation-color-swatch--active' : ''}`}
+          style={{ background: c }}
+          onClick={() => onChange(c)}
+          title={c}
+        />
+      ))}
     </div>
   );
 }

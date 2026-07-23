@@ -5,7 +5,7 @@
  *   Pass 1 — all route lines (every route, every pitch)
  *   Pass 2 — all decorations (anchors, labels, handles)
  */
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Route, Pitch, Position, PositionPx } from '../../types';
 import { useEditor } from '../../context/EditorContext';
 import { getDisplayNumber, getGradeColor, SCREEN, getOverlaySizes, getRouteLabelLayout } from '../../constants';
@@ -15,6 +15,7 @@ import { PitchStation } from './PitchStation';
 import { RouteLabel } from './RouteLabel';
 import { PitchGradeLabel } from './PitchGradeLabel';
 import { EditablePoints } from './EditablePoints';
+import { AnnotationsLayer } from './AnnotationsLayer';
 
 const BORDER_COLOR = 'rgba(0,0,0,0.65)';
 const ROUTE_NUMBER_BG = '#1a1a2e';
@@ -70,9 +71,12 @@ export function RoutesLayer() {
     hoveredRouteId, setHoveredRouteId, setSelectedRoute,
     mode, drawingLineType, addPoint,
     toPixel, toPercent, zoom, overlayScale,
+    annotationTool, inProgressAnnotationId,
+    addAnnotationPoint, finishAnnotationPath, addTextAnnotation, addArrowAnnotation,
   } = useEditor();
 
   const svgRef = useRef<SVGSVGElement>(null);
+  const [arrowStart, setArrowStart] = useState<Position | null>(null);
 
   const getSvgPos = useCallback(
     (e: React.MouseEvent): Position | null => {
@@ -88,13 +92,35 @@ export function RoutesLayer() {
 
   const handleSvgClick = useCallback(
     (e: React.MouseEvent) => {
+      if (mode === 'annotate') {
+        const pos = getSvgPos(e);
+        if (!pos) return;
+        if (annotationTool === 'area' || annotationTool === 'trail') {
+          addAnnotationPoint(pos);
+        } else if (annotationTool === 'text') {
+          addTextAnnotation(pos);
+        } else if (annotationTool === 'arrow') {
+          if (!arrowStart) {
+            setArrowStart(pos);
+          } else {
+            addArrowAnnotation(arrowStart, pos);
+            setArrowStart(null);
+          }
+        }
+        return;
+      }
       if (mode !== 'draw' || !selectedRouteId || !selectedPitchId) return;
       const pos = getSvgPos(e);
       if (!pos) return;
       addPoint(selectedRouteId, selectedPitchId, { ...pos, previousLineType: drawingLineType });
     },
-    [mode, selectedRouteId, selectedPitchId, drawingLineType, getSvgPos, addPoint],
+    [mode, selectedRouteId, selectedPitchId, drawingLineType, getSvgPos, addPoint,
+      annotationTool, arrowStart, addAnnotationPoint, addTextAnnotation, addArrowAnnotation],
   );
+
+  const handleSvgDoubleClick = useCallback(() => {
+    if (mode === 'annotate' && inProgressAnnotationId) finishAnnotationPath();
+  }, [mode, inProgressAnnotationId, finishAnnotationPath]);
 
   if (!imageSize.width) return null;
 
@@ -131,9 +157,10 @@ export function RoutesLayer() {
       width={imageSize.width}
       height={imageSize.height}
       style={{ position: 'absolute', top: 0, left: 0,
-        cursor: mode === 'draw' ? 'crosshair' : 'default',
+        cursor: mode === 'draw' || mode === 'annotate' ? 'crosshair' : 'default',
         overflow: 'visible' }}
       onClick={handleSvgClick}
+      onDoubleClick={handleSvgDoubleClick}
     >
       {/* ── Pass 1: route lines only ───────────────────────────────────────── */}
       {routes.map((route) => {
@@ -248,6 +275,9 @@ export function RoutesLayer() {
           </g>
         );
       })}
+
+      {/* ── Annotations: area highlights, text, arrows, dashed trails ──────── */}
+      <AnnotationsLayer zoomScale={zoomScale} />
     </svg>
   );
 }
